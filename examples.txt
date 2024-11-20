@@ -1,0 +1,21 @@
+-----------------------
+while condition {
+    doSomething();
+}
+-----------------------
+if x < y {
+  print("less");
+} 
+else
+{
+  return 0;
+}
+-----------------------
+fn int add(int a, int b) {
+    return a + b;
+}
+
+-----------------------
+class Example {
+
+}

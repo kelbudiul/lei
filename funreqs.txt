@@ -1,0 +1,12 @@
+string literal interpolation
+static type checking
+no exceptions
+garbage collection
+basic primitive types (string, int, bool, byte, char, long)
+all the standard math, logical, relational and bitwise operators for the built in types.
+explicit and implicit type casting of primitive data types
+functions with simple parameters and local variables
+flow control statements - if/else, while, do-while, for, switch
+cli interface for compiling, printing IR, running code and etc
+probably, base OOP implementation
+error handling, like it is done in golang
