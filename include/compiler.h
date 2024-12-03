@@ -1,6 +1,4 @@
-// include/compiler.h
-#ifndef COMPILER_H
-#define COMPILER_H
+#pragma once
 
 #include <string>
 #include <memory>
@@ -30,5 +28,3 @@ public:
     // Error handling and reporting
     void reportError(const std::string& stage, const std::string& message);
 };
-
-#endif // COMPILER_H

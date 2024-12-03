@@ -1,0 +1,69 @@
+// Comprehensive Test Case for Arrays Support
+
+// Function that manipulates arrays
+fn int sumArray(int[] arr, int size) {
+    int total = 0;
+    int i = 0;
+    while i < size {
+        total = total + arr[i];
+        i = i + 1;
+    }
+    return total;
+}
+
+// Function to find max in array
+fn int findMax(int[] arr, int size) {
+    int max = arr[0];
+    int i = 1;
+    while i < size {
+        if arr[i] > max {
+            max = arr[i];
+        }
+        i = i + 1;
+    }
+    return max;
+}
+
+fn int main() {
+    // Array initialization and declaration
+    int[] numbers = [1, 2, 3, 4, 5];
+    int[] dynamicArray = new int[10];
+    
+    // Populating dynamic array
+    int j = 0;
+    while j < 10 {
+        dynamicArray[j] = j * 2;
+        j = j + 1;
+    }
+
+    // Array length and access
+    int arrayLength = len(numbers);
+    print("Array length: ", arrayLength);
+    
+    // Accessing individual elements
+    print("First element: ", numbers[0]);
+    print("Last element: ", numbers[arrayLength - 1]);
+
+    // Array manipulation function calls
+    int arraySum = sumArray(numbers, arrayLength);
+    print("Sum of array: ", arraySum);
+
+    int maxValue = findMax(dynamicArray, 10);
+    print("Max value in dynamic array: ", maxValue);
+
+    // Multi-dimensional array test (if supported)
+    int[][] matrix = [
+        [1, 2, 3],
+        [4, 5, 6],
+        [7, 8, 9]
+    ];
+
+    // Accessing multi-dimensional array
+    print("Matrix element: ", matrix[1][1]);
+
+    // Array slice or subarray test (if syntax supports)
+    int[] subArray = numbers[1:4];  // hypothetical slice syntax
+    print("Sub array first element: ", subArray[0]);
+
+    return 0;
+}

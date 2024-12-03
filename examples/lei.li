@@ -1,0 +1,56 @@
+// Comprehensive Baseline Test Case for Lei
+
+// Function with return value
+fn int add(int a, int b) {
+    return a + b;
+}
+
+// Function without return value
+fn void_func() {
+    print("Void function called");
+}
+
+// Main test scenarios
+fn int main() {
+    // Variable declarations
+    int aa = 124;
+    char svsv = 'a';
+    str interpolatedStr = "Hello World";
+    bool loyalty = 1;
+
+    // Test function calls
+    int sum = add(10, 20);
+    print("Sum is: ", sum);
+    void_func();
+
+    // While loop test
+    int counter = 0;
+    while counter < 3 {
+        print("While loop iteration: ", counter);
+        counter = counter + 1;
+    }
+
+    // Conditional statement tests
+    int x = 5;
+    int y = 10;
+
+    if x < y {
+        print("less");
+    } 
+    else {
+        print(interpolatedStr);
+        return 0;
+    }
+
+    // Additional conditional test
+    if sum > 20 {
+        print("Sum is greater than 20");
+    }
+
+    // String interpolation test
+    str name = "John";
+    str greeting = "Hello, ${name}!";
+    print(greeting);
+
+    return 0;
+}

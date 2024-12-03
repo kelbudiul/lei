@@ -1,0 +1,4 @@
+fn void main() {
+    print(1+254);
+    print("It's 255, wow!");
+}

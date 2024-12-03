@@ -1,130 +1,133 @@
-#ifndef AST_H
-#define AST_H
+#pragma once
 
 #include <memory>
 #include <vector>
 #include <string>
 
-// Forward Declarations
-class ASTVisitor;
-class ASTNode;
-class ProgramNode;
-class FunctionDeclarationNode;
-class BinaryOperationNode;
-class LiteralNode;
-class IdentifierNode;
 
-// Visitable Interface
-class Visitable {
-public:
-    virtual void accept(ASTVisitor* visitor) = 0;
-    virtual ~Visitable() = default;
-};
+namespace Lei
+{
+    
+    // Forward Declarations
+    class ASTVisitor;
+    class ASTNode;
+    class ProgramNode;
+    class FunctionDeclarationNode;
+    class BinaryOperationNode;
+    class LiteralNode;
+    class IdentifierNode;
 
-// Visitor Interface
-class ASTVisitor {
-public:
-    virtual void visit(ProgramNode* node) = 0;
-    virtual void visit(FunctionDeclarationNode* node) = 0;
-    virtual void visit(BinaryOperationNode* node) = 0;
-    virtual void visit(LiteralNode* node) = 0;
-    virtual void visit(IdentifierNode* node) = 0;
-    virtual ~ASTVisitor() = default;
-};
+    // Visitable Interface
+    class Visitable {
+    public:
+        virtual void accept(ASTVisitor* visitor) = 0;
+        virtual ~Visitable() = default;
+    };
 
-// Base AST Node
-class ASTNode : public Visitable {
-public:
-    virtual ~ASTNode() = default;
-};
+    // Visitor Interface
+    class ASTVisitor {
+    public:
+        virtual void visit(ProgramNode* node) = 0;
+        virtual void visit(FunctionDeclarationNode* node) = 0;
+        virtual void visit(BinaryOperationNode* node) = 0;
+        virtual void visit(LiteralNode* node) = 0;
+        virtual void visit(IdentifierNode* node) = 0;
+        virtual ~ASTVisitor() = default;
+    };
 
-// Program Node
-class ProgramNode : public ASTNode {
-private:
-    std::vector<std::unique_ptr<ASTNode>> declarations;
+    // Base AST Node
+    class ASTNode : public Visitable {
+    public:
+        virtual ~ASTNode() = default;
+    };
 
-public:
-    void addDeclaration(std::unique_ptr<ASTNode> node);
-    void accept(ASTVisitor* visitor) override;
-    const std::vector<std::unique_ptr<ASTNode>>& getDeclarations() const;
-};
+    // Program Node
+    class ProgramNode : public ASTNode {
+    private:
+        std::vector<std::unique_ptr<ASTNode>> declarations;
 
-// Function Declaration Node
-class FunctionDeclarationNode : public ASTNode {
-private:
-    std::string name;
-    std::vector<std::string> parameters;
-    std::unique_ptr<ASTNode> body;
+    public:
+        void addDeclaration(std::unique_ptr<ASTNode> node);
+        void accept(ASTVisitor* visitor) override;
+        const std::vector<std::unique_ptr<ASTNode>>& getDeclarations() const;
+    };
 
-public:
-    FunctionDeclarationNode(
-        std::string name, 
-        std::vector<std::string> params, 
-        std::unique_ptr<ASTNode> body
-    );
+    // Function Declaration Node
+    class FunctionDeclarationNode : public ASTNode {
+    private:
+        std::string name;
+        std::vector<std::string> parameters;
+        std::unique_ptr<ASTNode> body;
 
-    void accept(ASTVisitor* visitor) override;
-    const std::string& getName() const;
-    const std::vector<std::string>& getParameters() const;
-    ASTNode* getBody() const;
-};
+    public:
+        FunctionDeclarationNode(
+            std::string name, 
+            std::vector<std::string> params, 
+            std::unique_ptr<ASTNode> body
+        );
 
-// Binary Operation Node
-class BinaryOperationNode : public ASTNode {
-private:
-    std::unique_ptr<ASTNode> left;
-    std::unique_ptr<ASTNode> right;
-    std::string operation;
+        void accept(ASTVisitor* visitor) override;
+        const std::string& getName() const;
+        const std::vector<std::string>& getParameters() const;
+        ASTNode* getBody() const;
+    };
 
-public:
-    BinaryOperationNode(
-        std::unique_ptr<ASTNode> left, 
-        std::string op, 
-        std::unique_ptr<ASTNode> right
-    );
+    // Binary Operation Node
+    class BinaryOperationNode : public ASTNode {
+    private:
+        std::unique_ptr<ASTNode> left;
+        std::unique_ptr<ASTNode> right;
+        std::string operation;
 
-    void accept(ASTVisitor* visitor) override;
-    ASTNode* getLeft() const;
-    ASTNode* getRight() const;
-    const std::string& getOperation() const;
-};
+    public:
+        BinaryOperationNode(
+            std::unique_ptr<ASTNode> left, 
+            std::string op, 
+            std::unique_ptr<ASTNode> right
+        );
 
-// Literal Node
-class LiteralNode : public ASTNode {
-private:
-    std::string value;
+        void accept(ASTVisitor* visitor) override;
+        ASTNode* getLeft() const;
+        ASTNode* getRight() const;
+        const std::string& getOperation() const;
+    };
 
-public:
-    explicit LiteralNode(std::string val);
-    void accept(ASTVisitor* visitor) override;
-    const std::string& getValue() const;
-};
+    // Literal Node
+    class LiteralNode : public ASTNode {
+    private:
+        std::string value;
 
-// Identifier Node
-class IdentifierNode : public ASTNode {
-private:
-    std::string name;
+    public:
+        explicit LiteralNode(std::string val);
+        void accept(ASTVisitor* visitor) override;
+        const std::string& getValue() const;
+    };
 
-public:
-    explicit IdentifierNode(std::string id);
-    void accept(ASTVisitor* visitor) override;
-    const std::string& getName() const;
-};
+    // Identifier Node
+    class IdentifierNode : public ASTNode {
+    private:
+        std::string name;
 
-// Concrete Visitors
-class PrintVisitor : public ASTVisitor {
-public:
-    void visit(ProgramNode* node) override;
-    void visit(FunctionDeclarationNode* node) override;
-    void visit(BinaryOperationNode* node) override;
-    void visit(LiteralNode* node) override;
-    void visit(IdentifierNode* node) override;
-};
+    public:
+        explicit IdentifierNode(std::string id);
+        void accept(ASTVisitor* visitor) override;
+        const std::string& getName() const;
+    };
 
-// AST Builder
-class ASTBuilder {
-public:
-    static std::unique_ptr<ProgramNode> buildSampleAST();
-};
+    // Concrete Visitors
+    class PrintVisitor : public ASTVisitor {
+    public:
+        void visit(ProgramNode* node) override;
+        void visit(FunctionDeclarationNode* node) override;
+        void visit(BinaryOperationNode* node) override;
+        void visit(LiteralNode* node) override;
+        void visit(IdentifierNode* node) override;
+    };
 
-#endif // AST_H
+    // AST Builder
+    class ASTBuilder {
+    public:
+        static std::unique_ptr<ProgramNode> buildSampleAST();
+    };
+
+} // namespace Lei

@@ -1,8 +1,8 @@
-cmake_minimum_required(VERSION 3.16)
-project(ToyCompiler)
+cmake_minimum_required(VERSION 3.20)
+project(LEI)
 
 # Set C++ standard
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Include directories
@@ -12,11 +12,5 @@ include_directories(${PROJECT_SOURCE_DIR}/include)
 file(GLOB SOURCES ${PROJECT_SOURCE_DIR}/src/*.cpp)
 
 # Add executable
-add_executable(toy_compiler ${SOURCES})
+add_executable(lei ${SOURCES})
 
-# Link LLVM (optional, if you're integrating LLVM)
-find_package(LLVM REQUIRED CONFIG)
-include_directories(${LLVM_INCLUDE_DIRS})
-add_definitions(${LLVM_DEFINITIONS})
-llvm_map_components_to_libnames(llvm_libs core support)
-target_link_libraries(toy_compiler ${llvm_libs})
