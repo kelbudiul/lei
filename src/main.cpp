@@ -1,10 +1,19 @@
-#include <iostream>
-#include <string>
-#include "include/source_reader.h"
-#include "include/compiler.h"
+#include "../include/common.h"
+#include "lexer.h"
+#include "parser.h"
+#include "semantic_analyzer.h"
+#include "symbol_table.h"
+#include "code_generator.h"
+
+#include "llvm/Support/TargetSelect.h"
+#include "source_reader.h"
 
 int main(int argc, char* argv[]) {
-    
+    // LLVM initialization
+    llvm::InitializeNativeTarget();
+    llvm::InitializeNativeTargetAsmPrinter();
+    llvm::InitializeNativeTargetAsmParser();
+
     std::string path = "."; // Default value for path to save resulting artifacts.
 
     if (argc == 1) 
@@ -20,20 +29,34 @@ int main(int argc, char* argv[]) {
     
 
     std::string filename = argv[1];
-    std::string sourceCode = Lei::SourceReader::readSourceFile(filename);
-    if (!sourceCode.empty()) {
-        std::cout << "File contents:\n" << sourceCode << std::endl;
+    std::string code = Lei::SourceReader::readSourceFile(filename);
+    if (!code.empty()) {
+        std::cout << "Source file contents:\n" << sourceCode << std::endl;
     }
     
 
+
     try {
-        Lei::Lexer LX = Lei::Lexer(sourceCode);
-        std::vector<Lei::Token> tokens = LX.tokenize();
+            // Lexical analysis
+            Lexer lexer(code);
+            auto tokens = lexer.tokenize();
 
-    } catch (const std::exception& e) {
-        std::cerr << "Compilation error: " << e.what() << std::endl;
-        return 1;
+            // Parsing
+            Parser parser(tokens);
+            auto functionAST = parser.parseFunction();
+
+            // Semantic analysis
+            SymbolTable symbols;
+            SemanticAnalyzer analyzer(symbols);
+            analyzer.checkFunction(*functionAST);
+
+            // Code generation and execution
+            CodeGenerator::generateAndRun(functionAST);
+        }
+        catch (const std::exception& e) {
+            std::cerr << "Error: " << e.what() << std::endl;
+            return 1;
+        }
+
+        return 0;
     }
-
-    return EXIT_SUCCESS;
-}
