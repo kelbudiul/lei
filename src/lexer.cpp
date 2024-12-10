@@ -43,6 +43,8 @@ std::vector<Token> Lexer::tokenize() {
             if (word == "fn") tokens.emplace_back(FN, word, startLine, startColumn);
             else if (word == "int") tokens.emplace_back(INT, word, startLine, startColumn);
             else if (word == "return") tokens.emplace_back(RETURN, word, startLine, startColumn);
+            else if (word == "var") tokens.emplace_back(VAR, word, startLine, startColumn);
+            else if (word == "print") tokens.emplace_back(PRINT, word, startLine, startColumn);
             else tokens.emplace_back(IDENTIFIER, word, startLine, startColumn);
         } else if (std::isdigit(input[pos])) {
             std::string num;

@@ -1,118 +1,108 @@
-# LEI: Implementing programming language with LLVM
+# Lei Programming Language Compiler
 
-## Getting started
+A compiler implementation for the Lei programming language, built using C++ and LLVM. This project implements a complete compilation pipeline including lexical analysis, parsing, semantic analysis, and code generation.
 
-If your station of building is Windows, I would strongly recommend to use linux core subsystem (WSL), for sure you could do the way you prefer. 
+## Project Structure
 
+The compiler is organized into several key components:
 
+### Core Components
 
-## Purpose
+- **Lexer** (`lexer.h`, `lexer.cpp`): Performs lexical analysis, converting source code into tokens. Handles basic language tokens including keywords (`fn`, `int`, `return`), identifiers, numbers, and symbols.
 
-Educational!
+- **Parser** (`parser.h`, `parser.cpp`): Constructs an Abstract Syntax Tree (AST) from the token stream. Currently supports parsing of:
+  - Function definitions
+  - Return statements
+  - Basic expressions
 
-I am interrested in language design and want to try develop something actually working for the fisrt time in the domain of concerns. I hope by the end it is at least ***Turing Complete*** and it is indeed!
+- **AST** (`ast.h`, `ast.cpp`): Defines the Abstract Syntax Tree structure using a visitor pattern. Includes nodes for:
+  - Functions
+  - Return statements
+  - Declarations
+  - Assignments
+  - Arrays
 
-## Project Related Assumptions
+- **Symbol Table** (`symbol_table.h`, `symbol_table.cpp`): Manages symbol information and scope, providing:
+  - Symbol tracking
+  - Type information storage
+  - Duplicate declaration checking
+  - Symbol lookup
 
-- *Target Architecture*: x8086
-- *Binary File Format*: ELF64/PE. Depends on the build environment flags/switches.
-- *Implementation language*: C++
-- *Build generator and build system*: Cmake, Make
+### Analysis and Generation
 
-## What's the language is about...
+- **Semantic Visitor** (`semantic_visitor.h`, `semantic_visitor.cpp`): Performs semantic analysis including:
+  - Type checking
+  - Symbol resolution
+  - Error detection and reporting
 
-### Grammar
-```lisp
-## Top-Level Structure
-<program> ::= <main_function> {<function>}
+- **Code Generator** (`codegen_visitor.h`, `codegen_visitor.cpp`): Generates LLVM IR and handles JIT compilation:
+  - LLVM IR generation
+  - Runtime execution support
+  - Function compilation and execution
 
-<main_function> ::= "fn" ("int" | "void") "main" "(" [<parameters>] ")" "{" {<statement>} "}"
+### Utility Components
 
-<function> ::= "fn" <type> <identifier> "(" [<parameters>] ")" "{" {<statement>} "}"
+- **Source Reader** (`source_reader.h`, `source_reader.cpp`): Handles source file operations:
+  - File reading
+  - Content streaming
+  - Error handling for file operations
 
-## Parameters and Types
-<parameters> ::= <parameter> {"," <parameter>}
-<parameter> ::= <type> <identifier>
+## Building and Running
 
-<type> ::= "int" | "char" | "str" | "bool" | "void"
+### Prerequisites
 
-## Expressions with Explicit Precedence
-<expression> ::= <logical_or_expression>
+- C++ compiler with C++17 support
+- LLVM development libraries
+- CMake (build system)
 
-<logical_or_expression> ::= <logical_and_expression> 
-                           {("||") <logical_and_expression>}
+### Usage
 
-<logical_and_expression> ::= <equality_expression> 
-                            {("&&") <equality_expression>}
-
-<equality_expression> ::= <comparison_expression> 
-                         {("==" | "!=") <comparison_expression>}
-
-<comparison_expression> ::= <additive_expression> 
-                           {("<" | ">" | "<=" | ">=") <additive_expression>}
-
-<additive_expression> ::= <multiplicative_expression> 
-                         {("+" | "-") <multiplicative_expression>}
-
-<multiplicative_expression> ::= <unary_expression> 
-                               {("*" | "/") <unary_expression>}
-
-<unary_expression> ::= <primary_expression>
-                     | <function_call>
-                     | <string_interpolation>
-
-<primary_expression> ::= <literal>
-                       | <identifier>
-                       | "(" <expression> ")"
-
-## Statements
-<statement> ::= <variable_declaration> ";"
-              | <assignment> ";"
-              | <function_call> ";"
-              | <return_statement> ";"
-              | <if_statement>
-              | <while_loop>
-              | <expression> ";"
-
-## Detailed Statement Definitions
-<variable_declaration> ::= <type> <identifier> "=" <expression>
-<assignment> ::= <identifier> "=" <expression>
-<function_call> ::= <identifier> "(" [<arguments>] ")"
-<return_statement> ::= "return" [<expression>]
-
-<if_statement> ::= "if" <expression> "{" {<statement>} "}" 
-                   ["else" "{" {<statement>} "}"]
-
-<while_loop> ::= "while" <expression> "{" {<statement>} "}"
-
-## Supporting Definitions
-<arguments> ::= <expression> {"," <expression>}
-
-<string_interpolation> ::= "\"" <string_part> "${" <identifier> "}" <string_part> "\""
-
-## Literals and Identifiers
-<literal> ::= <int_literal> | <char_literal> | <string_literal> | <bool_literal>
-<int_literal> ::= [0-9]+
-<char_literal> ::= "'" <character> "'"
-<string_literal> ::= "\"" {<character>} "\""
-<bool_literal> ::= "0" | "1"
-
-<identifier> ::= [a-zA-Z_][a-zA-Z0-9_]*
-
-<string_part> ::= {<character>}
-<character> ::= any printable ASCII character except '"' or '`'
-
+```bash
+./compiler <input_file> [output_path]
 ```
 
-## **Future Enhancements**
-- **Optimizations**: To use LLVM’s optimization passes to improve the generated machine code.
-- **Dynamic Linking**: To allow calling external functions (like `printf`) from your code.
-- **REPL**: To Implement a Read-Eval-Print Loop for interactive execution.
+The compiler accepts two command-line arguments:
+- `input_file`: Path to the source file (required)
+- `output_path`: Output directory for generated files (optional, defaults to current directory)
 
+## Implementation Details
 
-## References
+### Visitor Pattern
 
-- https://github.com/ghaiklor/llvm-kaleidoscope/
-- https://eli.thegreenplace.net/2013/02/25/a-deeper-look-into-the-llvm-code-generator-part-1
+The project extensively uses the visitor pattern for AST traversal and processing. Three main visitors are implemented:
 
-- https://classes.cs.uchicago.edu/archive/2020/fall/22600-1/project/llvm.pdf
+1. Base Visitor (visitor.h)
+2. Semantic Analysis Visitor
+3. Code Generation Visitor
+
+### Error Handling
+
+The compiler implements comprehensive error handling:
+- Lexical errors (unknown characters, malformed tokens)
+- Parsing errors (unexpected tokens, syntax errors)
+- Semantic errors (duplicate declarations, type mismatches)
+- File handling errors
+
+### Memory Management
+
+The project uses modern C++ memory management practices:
+- `std::unique_ptr` for AST node ownership
+- RAII principles throughout
+- Smart pointer usage for LLVM resources
+
+## Current Limitations
+
+- Basic type system (currently supports integers)
+- Limited function support (no parameters yet)
+- Single-file compilation only
+- Basic error recovery
+
+## Future Enhancements
+
+Planned features include:
+- Enhanced type system
+- Function parameters and overloading
+- Control flow statements
+- Standard library implementation
+- Multi-file compilation support
+- Optimization passes
