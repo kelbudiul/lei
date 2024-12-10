@@ -106,3 +106,96 @@ Planned features include:
 - Standard library implementation
 - Multi-file compilation support
 - Optimization passes
+
+
+## Language Grammar Hierarchy
+
+### 1. Program Structure
+```ebnf
+program        ::= declaration*
+declaration    ::= functionDecl | varDecl | statement
+```
+
+### 2. Declarations
+```ebnf
+functionDecl   ::= "fn" type IDENTIFIER "(" paramList? ")" block
+paramList      ::= param ("," param)*
+param          ::= IDENTIFIER ":" type
+
+varDecl        ::= "var" IDENTIFIER ":" type ("=" expression)?
+```
+
+### 3. Types
+```ebnf
+type          ::= "int" | "float" | "bool" | "str" | "void" | arrayType
+arrayType     ::= type "[" "]"
+```
+
+### 4. Statements
+```ebnf
+statement     ::= exprStmt
+                | block 
+                | ifStmt
+                | whileStmt
+                | forStmt
+                | returnStmt
+                | varDecl
+
+block         ::= "{" statement* "}"
+ifStmt        ::= "if" expression block ("else" block)?
+whileStmt     ::= "while" expression block
+forStmt       ::= "for" IDENTIFIER "in" expression block
+returnStmt    ::= "return" expression? ";"
+```
+
+### 5. Expressions (in order of precedence, lowest to highest)
+```ebnf
+expression    ::= assignment
+
+assignment    ::= IDENTIFIER ("=" | "+=" | "-=" | "*=" | "/=") expression
+                | logicOr
+
+logicOr      ::= logicAnd ("or" logicAnd)*
+logicAnd     ::= equality ("and" equality)*
+equality     ::= comparison (("!=" | "==") comparison)*
+comparison   ::= term ((">" | ">=" | "<" | "<=") term)*
+term         ::= factor (("+" | "-") factor)*
+factor       ::= unary (("*" | "/") unary)*
+unary        ::= ("!" | "-") unary | primary
+
+primary      ::= NUMBER | STRING | "true" | "false" | "(" expression ")"
+               | IDENTIFIER | call | arrayAccess
+
+call         ::= IDENTIFIER "(" arguments? ")"
+arguments    ::= expression ("," expression)*
+arrayAccess  ::= IDENTIFIER "[" expression "]"
+```
+
+### AST Node Hierarchy
+
+```
+ASTNode (base)
+├── ExpressionNode
+│   ├── LiteralExpr (int, float, bool, string)
+│   ├── UnaryExpr (-, !)
+│   ├── BinaryExpr (+, -, *, /, etc)
+│   ├── ComparisonExpr (<, <=, >, >=, ==, !=)
+│   ├── LogicalExpr (and, or)
+│   ├── VariableExpr (identifier reference)
+│   ├── AssignmentExpr (=, +=, -=, *=, /=)
+│   ├── CallExpr (function calls)
+│   └── ArrayAccessExpr
+│
+├── StatementNode
+│   ├── ExpressionStmt
+│   ├── BlockStmt
+│   ├── IfStmt
+│   ├── WhileStmt
+│   ├── ForStmt
+│   ├── ReturnStmt
+│   └── VarDeclStmt
+│
+└── DeclarationNode
+    ├── FunctionDecl
+    └── VarDecl
+```

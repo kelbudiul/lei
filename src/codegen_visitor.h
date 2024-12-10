@@ -1,38 +1,47 @@
 #ifndef CODEGEN_VISITOR_H
 #define CODEGEN_VISITOR_H
 
-#include "../include/common.h"
+#include "visitor.h"
 #include "ast.h"
-
-#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/IRBuilder.h"
+#include "llvm/IR/LLVMContext.h"
 #include "llvm/IR/Module.h"
-#include "llvm/IR/Verifier.h"
-#include "llvm/ExecutionEngine/Orc/LLJIT.h"
 
-
-class CodeGenerationVisitor : public Visitor {
+class CodeGenVisitor : public Visitor {
 private:
     llvm::LLVMContext& context;
     llvm::IRBuilder<>& builder;
     llvm::Module& module;
+    
+    std::map<std::string, llvm::AllocaInst*> namedValues;
+    llvm::Function* currentFunction;
+    
+    llvm::Value* lastValue;
+    
+    llvm::Type* getLLVMType(Type type);
+    llvm::AllocaInst* createEntryBlockAlloca(llvm::Function* function,
+                                            const std::string& name,
+                                            llvm::Type* type);
 
 public:
-    CodeGenerationVisitor(llvm::LLVMContext& ctx, 
-                          llvm::IRBuilder<>& bldr, 
-                          llvm::Module& mod);
-
-    void visit(ASTNode* node) override;
+    CodeGenVisitor(llvm::LLVMContext& ctx, 
+                   llvm::IRBuilder<>& bldr,
+                   llvm::Module& mod);
+    
     void visit(FunctionAST* node) override;
+    void visit(BlockAST* node) override;
+    void visit(IfStatementAST* node) override;
+    void visit(WhileStatementAST* node) override;
     void visit(ReturnAST* node) override;
-    void visit(BinaryExpressionAST* node) override;
-    void visit(ExpressionAST* node) override;
-
-
-
-    llvm::Module& getModule(); 
-
-
+    void visit(VariableDeclarationAST* node) override;
+    void visit(BinaryExprAST* node) override;
+    void visit(UnaryExprAST* node) override;
+    void visit(LiteralAST* node) override;
+    void visit(VariableExprAST* node) override;
+    void visit(CallExprAST* node) override;
+    void visit(AssignmentExprAST* node) override;
+    
+    llvm::Value* getLastValue() const { return lastValue; }
 };
 
 #endif // CODEGEN_VISITOR_H
