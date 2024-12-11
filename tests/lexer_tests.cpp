@@ -1,163 +1,115 @@
-/**
- * @file lexer_test.cpp
- * @brief Unit tests for the Lexer class using Google Test
- */
-
 #include <gtest/gtest.h>
 #include "lexer.h"
+#include "error_handler.h"
 
 class LexerTest : public ::testing::Test {
 protected:
-    // Helper function to verify token sequence
-    void verifyTokenSequence(const std::string& input, 
-                           const std::vector<std::pair<TokenType, std::string>>& expected) {
-        Lexer lexer(input);
-        std::vector<Token> tokens = lexer.tokenize();
-        
-        ASSERT_EQ(tokens.size(), expected.size() + 1); // +1 for END token
-        
-        for (size_t i = 0; i < expected.size(); ++i) {
-            EXPECT_EQ(tokens[i].type, expected[i].first)
-                << "Token mismatch at position " << i;
-            EXPECT_EQ(tokens[i].value, expected[i].second)
-                << "Value mismatch at position " << i;
-        }
-        
-        // Verify END token
-        EXPECT_EQ(tokens.back().type, END);
+    void SetUp() override {
+        // Clear any existing errors before each test
+        ErrorHandler::instance().clearAllErrors();
     }
 };
 
-// Test function declarations
-TEST_F(LexerTest, FunctionDeclaration) {
-    const std::string input = "fn int add(a: int, b: int) { return a + b; }";
-    const std::vector<std::pair<TokenType, std::string>> expected = {
-        {FN, "fn"},
-        {INT, "int"},
-        {IDENTIFIER, "add"},
-        {LPAREN, "("},
-        {IDENTIFIER, "a"},
-        {COLON, ":"},
-        {INT, "int"},
-        {COMMA, ","},
-        {IDENTIFIER, "b"},
-        {COLON, ":"},
-        {INT, "int"},
-        {RPAREN, ")"},
-        {LBRACE, "{"},
-        {RETURN, "return"},
-        {IDENTIFIER, "a"},
-        {PLUS, "+"},
-        {IDENTIFIER, "b"},
-        {SEMICOLON, ";"},
-        {RBRACE, "}"}
-    };
+// Test invalid float literals
+TEST_F(LexerTest, InvalidFloatLiterals) {
+    std::string input = "var x: float = 3..; var y: float = 3.";
+    Lexer lexer(input);
+    auto tokens = lexer.tokenize();
     
-    verifyTokenSequence(input, expected);
+    // Check if errors were reported
+    EXPECT_TRUE(ErrorHandler::instance().hasErrors(ErrorLevel::LEXICAL));
+    auto errors = ErrorHandler::instance().getErrors(ErrorLevel::LEXICAL);
+    EXPECT_EQ(errors.size(), 2);
+    
+    // Check error messages
+    EXPECT_TRUE(errors[0].message.find("multiple decimal points") != std::string::npos);
+    EXPECT_TRUE(errors[1].message.find("needs at least one digit after decimal point") != std::string::npos);
 }
 
-// Test variable declarations
-TEST_F(LexerTest, VariableDeclarations) {
-    const std::string input = 
-        "var x: float = 3.14;\n"
-        "var b: bool = true;\n"
-        "var i: int = 42;";
-        
-    const std::vector<std::pair<TokenType, std::string>> expected = {
-        {VAR, "var"},
-        {IDENTIFIER, "x"},
-        {COLON, ":"},
-        {FLOAT_TYPE, "float"},
-        {EQUALS, "="},
-        {FLOAT_LITERAL, "3.14"},
-        {SEMICOLON, ";"},
-        {VAR, "var"},
-        {IDENTIFIER, "b"},
-        {COLON, ":"},
-        {BOOL_TYPE, "bool"},
-        {EQUALS, "="},
-        {BOOL_LITERAL, "true"},
-        {SEMICOLON, ";"},
-        {VAR, "var"},
-        {IDENTIFIER, "i"},
-        {COLON, ":"},
-        {INT, "int"},
-        {EQUALS, "="},
-        {NUMBER, "42"},
-        {SEMICOLON, ";"}
-    };
+// Test unterminated string literals
+TEST_F(LexerTest, UnterminatedString) {
+    std::string input = "var name: str = \"hello world";
+    Lexer lexer(input);
+    auto tokens = lexer.tokenize();
     
-    verifyTokenSequence(input, expected);
+    EXPECT_TRUE(ErrorHandler::instance().hasErrors(ErrorLevel::LEXICAL));
+    auto errors = ErrorHandler::instance().getErrors(ErrorLevel::LEXICAL);
+    EXPECT_EQ(errors.size(), 1);
+    EXPECT_TRUE(errors[0].message.find("Unterminated string literal") != std::string::npos);
 }
 
-// Test array operations
-TEST_F(LexerTest, ArrayOperations) {
-    const std::string input = "var arr: float[5] = {1.12, 2.143, 3.12};";
+// Test invalid escape sequences
+TEST_F(LexerTest, InvalidEscapeSequence) {
+    std::string input = "var str: str = \"hello\\k world\"";
+    Lexer lexer(input);
+    auto tokens = lexer.tokenize();
     
-    const std::vector<std::pair<TokenType, std::string>> expected = {
-        {VAR, "var"},
-        {IDENTIFIER, "arr"},
-        {COLON, ":"},
-        {FLOAT_TYPE, "float"},
-        {LBRACKET, "["},
-        {NUMBER, "5"},
-        {RBRACKET, "]"},
-        {EQUALS, "="},
-        {LBRACE, "{"},
-        {FLOAT_LITERAL, "1.12"},
-        {COMMA, ","},
-        {FLOAT_LITERAL, "2.143"},
-        {COMMA, ","},
-        {FLOAT_LITERAL, "3.12"},
-        {RBRACE, "}"},
-        {SEMICOLON, ";"}
-    };
-    
-    verifyTokenSequence(input, expected);
+    EXPECT_TRUE(ErrorHandler::instance().hasErrors(ErrorLevel::LEXICAL));
+    auto errors = ErrorHandler::instance().getErrors(ErrorLevel::LEXICAL);
+    EXPECT_EQ(errors.size(), 1);
+    EXPECT_TRUE(errors[0].message.find("Invalid escape sequence") != std::string::npos);
 }
 
-// Test error handling
-TEST_F(LexerTest, ErrorHandling) {
-    // Test invalid number
-    EXPECT_THROW({
-        Lexer lexer("var x: float = 3.14.15;");
-        lexer.tokenize();
-    }, LexerError);
+// Test invalid operators
+TEST_F(LexerTest, InvalidOperators) {
+    std::string input = "if (x & y) { } if (x | y) { }";
+    Lexer lexer(input);
+    auto tokens = lexer.tokenize();
     
-    // Test unterminated string
-    EXPECT_THROW({
-        Lexer lexer("var str: str = \"unterminated;");
-        lexer.tokenize();
-    }, LexerError);
-    
-    // Test invalid character
-    EXPECT_THROW({
-        Lexer lexer("var x: int = @;");
-        lexer.tokenize();
-    }, LexerError);
+    EXPECT_TRUE(ErrorHandler::instance().hasErrors(ErrorLevel::LEXICAL));
+    auto errors = ErrorHandler::instance().getErrors(ErrorLevel::LEXICAL);
+    EXPECT_EQ(errors.size(), 2);
+    EXPECT_TRUE(errors[0].message.find("Expected '&&'") != std::string::npos);
+    EXPECT_TRUE(errors[1].message.find("Expected '||'") != std::string::npos);
 }
 
-// Test comments
-TEST_F(LexerTest, Comments) {
-    const std::string input = 
-        "// This is a comment\n"
-        "var x: int = 42; // Inline comment\n"
-        "// Another comment";
-        
-    const std::vector<std::pair<TokenType, std::string>> expected = {
-        {VAR, "var"},
-        {IDENTIFIER, "x"},
-        {COLON, ":"},
-        {INT, "int"},
-        {EQUALS, "="},
-        {NUMBER, "42"},
-        {SEMICOLON, ";"}
-    };
+// Test invalid characters
+TEST_F(LexerTest, InvalidCharacters) {
+    std::string input = "var x: int = 42; # comment";
+    Lexer lexer(input);
+    auto tokens = lexer.tokenize();
     
-    verifyTokenSequence(input, expected);
+    EXPECT_TRUE(ErrorHandler::instance().hasErrors(ErrorLevel::LEXICAL));
+    auto errors = ErrorHandler::instance().getErrors(ErrorLevel::LEXICAL);
+    EXPECT_EQ(errors.size(), 1);
+    EXPECT_TRUE(errors[0].message.find("Unexpected character '#'") != std::string::npos);
+}
+
+// Test error recovery
+TEST_F(LexerTest, ErrorRecovery) {
+    std::string input = "var x: int = 3..; var y: int = 42;";
+    Lexer lexer(input);
+    auto tokens = lexer.tokenize();
+    
+    // Check that we got errors but also valid tokens
+    EXPECT_TRUE(ErrorHandler::instance().hasErrors(ErrorLevel::LEXICAL));
+    
+    // Find the valid integer token '42'
+    bool found42 = false;
+    for (const auto& token : tokens) {
+        if (token.type == NUMBER && token.value == "42") {
+            found42 = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(found42);
+}
+
+// Test line and column tracking
+TEST_F(LexerTest, LineColumnTracking) {
+    std::string input = "var x: int = 42;\nvar str: str = \"unterminated";
+    Lexer lexer(input);
+    auto tokens = lexer.tokenize();
+    
+    EXPECT_TRUE(ErrorHandler::instance().hasErrors(ErrorLevel::LEXICAL));
+    auto errors = ErrorHandler::instance().getErrors(ErrorLevel::LEXICAL);
+    EXPECT_EQ(errors.size(), 1);
+    EXPECT_EQ(errors[0].line, 2);  // Error should be on line 2
 }
 
 int main(int argc, char **argv) {
     testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }
+
+

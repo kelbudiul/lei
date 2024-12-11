@@ -101,101 +101,146 @@ The project uses modern C++ memory management practices:
 
 Planned features include:
 - Enhanced type system
-- Function parameters and overloading
-- Control flow statements
-- Standard library implementation
-- Multi-file compilation support
+- Function overloading
+- Multi-file preprocessing and compilation support
 - Optimization passes
+- Basic OOP support
 
 
-## Language Grammar Hierarchy
+## Lei Language Grammar
 
-### 1. Program Structure
+### Program Structure
 ```ebnf
-program        ::= declaration*
-declaration    ::= functionDecl | varDecl | statement
+program        → function*
+function       → "fn" type IDENTIFIER "(" parameters? ")" block
+parameters     → parameter ("," parameter)*
+parameter      → IDENTIFIER ":" type
+
+### Types
+type           → basicType | arrayType
+basicType      → "int" | "float" | "bool" | "str"
+arrayType      → basicType "[" (NUMBER | "dynamic")? "]"  # Fixed size or dynamic arrays
+
+### Statements
+block          → "{" statement* "}"
+statement      → varDecl 
+               | ifStmt 
+               | whileStmt 
+               | returnStmt 
+               | printStmt
+               | exprStmt
+
+varDecl        → "var" IDENTIFIER ":" type ("=" initializer)? ";"
+initializer    → expression 
+               | arrayInitializer
+               | "new" basicType "[" expression "]"  # Dynamic array allocation
+
+arrayInitializer → "{" (expression ("," expression)*)? "}"  # Can be empty
+ifStmt         → "if" expression block ("else" block)?
+whileStmt      → "while" expression block
+returnStmt     → "return" expression? ";"
+printStmt      → "print" "(" expression ")" ";"
+exprStmt       → expression ";"
+
+### Expressions
+expression     → assignment
+assignment     → (call ".")? IDENTIFIER assignOp expression
+               | logicalOr
+assignOp       → "=" | "+=" | "-=" | "*=" | "/="
+
+logicalOr      → logicalAnd ("||" logicalAnd)*
+logicalAnd     → equality ("&&" equality)*
+equality       → comparison (("==" | "!=") comparison)*
+comparison     → term (("<" | "<=" | ">" | ">=") term)*
+term           → factor (("+" | "-") factor)*
+factor         → unary (("*" | "/") unary)*
+unary          → ("!" | "-") unary | call
+call           → primary ("(" arguments? ")" | "[" expression "]")*
+primary        → NUMBER | STRING | "true" | "false" | "(" expression ")"
+               | IDENTIFIER | arrayInitializer
+               | arrayAllocation
+
+arrayAllocation → "new" basicType "[" expression "]"
+arguments      → expression ("," expression)*
+
+### Lexical Rules
+NUMBER         → DIGIT+ ("." DIGIT+)?
+STRING         → "\"" <any char except "\"">* "\""
+IDENTIFIER     → ALPHA (ALPHA | DIGIT)*
+ALPHA          → "a"..."z" | "A"..."Z" | "_"
+DIGIT          → "0"..."9"
 ```
 
-### 2. Declarations
-```ebnf
-functionDecl   ::= "fn" type IDENTIFIER "(" paramList? ")" block
-paramList      ::= param ("," param)*
-param          ::= IDENTIFIER ":" type
+### Variable Initialization Rules
 
-varDecl        ::= "var" IDENTIFIER ":" type ("=" expression)?
+1. **Basic Types Default Values**
+   ```lei
+   var i: int;           // Defaults to 0
+   var f: float;         // Defaults to 0.0
+   var b: bool;          // Defaults to false
+   var s: str;           // Defaults to ""
+   ```
+
+2. **Fixed-Size Arrays**
+   ```lei
+   var arr1: int[5];               // Array of 5 ints, initialized to [0,0,0,0,0]
+   var arr2: float[3] = {1.0};     // Partially initialized to [1.0,0.0,0.0]
+   var arr3: bool[2] = {};         // Empty initialization [false,false]
+   ```
+
+3. **Dynamic Arrays**
+   ```lei
+   var arr4: int[];                // Dynamic array, initially empty
+   arr4 = new int[10];            // Allocate 10 elements
+   
+   var size: int = input();
+   var arr5: float[] = new float[size];  // Runtime size determination
+   ```
+
+### Example Code
+```lei
+fn int main() {
+    // Uninitialized variables with default values
+    var count: int;            // 0
+    var temperature: float;    // 0.0
+    
+    // Fixed size array
+    var fixed: int[3];         // [0,0,0]
+    
+    // Dynamic array allocation
+    var size: int = 5;
+    var dynamic: int[] = new int[size];
+    
+    // Partial array initialization
+    var grades: float[5] = {90.5, 85.0};  // [90.5, 85.0, 0.0, 0.0, 0.0]
+    
+    return 0;
+}
 ```
 
-### 3. Types
-```ebnf
-type          ::= "int" | "float" | "bool" | "str" | "void" | arrayType
-arrayType     ::= type "[" "]"
-```
+### Notable Additions and Rules
 
-### 4. Statements
-```ebnf
-statement     ::= exprStmt
-                | block 
-                | ifStmt
-                | whileStmt
-                | forStmt
-                | returnStmt
-                | varDecl
+1. **Default Initialization**
+   - All basic types have default values when uninitialized
+   - Array elements are initialized to their type's default value
 
-block         ::= "{" statement* "}"
-ifStmt        ::= "if" expression block ("else" block)?
-whileStmt     ::= "while" expression block
-forStmt       ::= "for" IDENTIFIER "in" expression block
-returnStmt    ::= "return" expression? ";"
-```
+2. **Dynamic Arrays**
+   - Can be declared without size using `type[]`
+   - Size determined at runtime using `new type[size]`
+   - Support reallocation with new size
 
-### 5. Expressions (in order of precedence, lowest to highest)
-```ebnf
-expression    ::= assignment
+3. **Array Initialization**
+   - Can be fully initialized, partially initialized, or empty
+   - Missing elements get default values
+   - Fixed-size arrays maintain their size constraint
+   - Dynamic arrays can be resized
 
-assignment    ::= IDENTIFIER ("=" | "+=" | "-=" | "*=" | "/=") expression
-                | logicOr
+4. **Memory Management**
+   - Dynamic arrays are automatically managed
+   - Memory is freed when arrays go out of scope
+   - No explicit delete/free operations needed
 
-logicOr      ::= logicAnd ("or" logicAnd)*
-logicAnd     ::= equality ("and" equality)*
-equality     ::= comparison (("!=" | "==") comparison)*
-comparison   ::= term ((">" | ">=" | "<" | "<=") term)*
-term         ::= factor (("+" | "-") factor)*
-factor       ::= unary (("*" | "/") unary)*
-unary        ::= ("!" | "-") unary | primary
-
-primary      ::= NUMBER | STRING | "true" | "false" | "(" expression ")"
-               | IDENTIFIER | call | arrayAccess
-
-call         ::= IDENTIFIER "(" arguments? ")"
-arguments    ::= expression ("," expression)*
-arrayAccess  ::= IDENTIFIER "[" expression "]"
-```
-
-### AST Node Hierarchy
-
-```
-ASTNode (base)
-├── ExpressionNode
-│   ├── LiteralExpr (int, float, bool, string)
-│   ├── UnaryExpr (-, !)
-│   ├── BinaryExpr (+, -, *, /, etc)
-│   ├── ComparisonExpr (<, <=, >, >=, ==, !=)
-│   ├── LogicalExpr (and, or)
-│   ├── VariableExpr (identifier reference)
-│   ├── AssignmentExpr (=, +=, -=, *=, /=)
-│   ├── CallExpr (function calls)
-│   └── ArrayAccessExpr
-│
-├── StatementNode
-│   ├── ExpressionStmt
-│   ├── BlockStmt
-│   ├── IfStmt
-│   ├── WhileStmt
-│   ├── ForStmt
-│   ├── ReturnStmt
-│   └── VarDeclStmt
-│
-└── DeclarationNode
-    ├── FunctionDecl
-    └── VarDecl
-```
+5. **Constraints**
+   - Cannot access array elements before allocation
+   - Array indices must be within bounds
+   - Dynamic arrays must be allocated before use

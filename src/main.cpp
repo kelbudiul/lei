@@ -1,12 +1,15 @@
-#include "../include/common.h"
 #include "lexer.h"
-#include "parser.h"
-#include "semantic_visitor.h"
-#include "symbol_table.h"
-#include "codegen_visitor.h"
-
-#include "llvm/Support/TargetSelect.h"
 #include "source_reader.h"
+//#include "parser.h"
+//#include "semantic_visitor.h"
+//#include "symbol_table.h"
+//#include "codegen_visitor.h"
+
+
+#include "error_handler.h"
+#include "llvm/Support/TargetSelect.h"
+#include <iostream>
+#include <sstream>
 
 int main(int argc, char* argv[]) {
     // LLVM initialization
@@ -33,34 +36,87 @@ int main(int argc, char* argv[]) {
             return EXIT_FAILURE;
         }
 
-        std::cout << "Source file contents:\n" << code << std::endl;
-
-        // Lexing and Parsing
+        std::cout << "Processing source file: " << filename << std::endl;
+        
+        // Lexical Analysis
         Lexer lexer(code);
-        Parser parser(lexer.tokenize());
-        auto ast = parser.parse();
+        auto tokens = lexer.tokenize();
 
-        // Semantic Analysis
-        SymbolTable symbolTable;
-        SemanticVisitor semanticVisitor(symbolTable);
-        ast->accept(&semanticVisitor);
+        // Check for lexical errors
+        if (ErrorHandler::instance().hasErrors(ErrorLevel::LEXICAL)) {
+            std::cerr << "\nLexical Analysis Failed\n";
+            auto lexicalErrors = ErrorHandler::instance().getErrors(ErrorLevel::LEXICAL);
+            std::cerr << "Found " << lexicalErrors.size() << " lexical error(s):\n";
+            
+            // Print the source code context for each error
+            for (const auto& error : lexicalErrors) {
+                // Get the line of code where the error occurred
+                std::istringstream codeStream(code);
+                std::string line;
+                int currentLine = 1;
+                while (std::getline(codeStream, line) && currentLine < error.line) {
+                    currentLine++;
+                }
 
-        if (semanticVisitor.hasErrors()) {
-            for (const auto& error : semanticVisitor.getErrors()) {
-                std::cerr << error << std::endl;
+                std::cerr << "\nError at line " << error.line << ", column " << error.column << ":\n";
+                std::cerr << line << "\n";
+                // Print the error pointer
+                std::cerr << std::string(error.column - 1, ' ') << "^\n";
+                std::cerr << error.message << "\n";
             }
             return EXIT_FAILURE;
         }
 
-        // Code Generation
-        llvm::LLVMContext context;
-        llvm::IRBuilder<> builder(context);
-        llvm::Module module("my_module", context);
+        // // Debug: Print tokens if needed
+        // #ifdef DEBUG_MODE
+        // std::cout << "\nTokens:\n";
+        // for (const auto& token : tokens) {
+        //     std::cout << "Type: " << static_cast<int>(token.type) 
+        //               << ", Value: '" << token.value 
+        //               << "', Line: " << token.line 
+        //               << ", Column: " << token.column << "\n";
+        // }
+        // #endif
 
-        CodeGenerationVisitor codeGenVisitor(context, builder, module);
-        ast->accept(&codeGenVisitor);
+        // Parsing
+        // Parser parser(tokens);
+        // auto ast = parser.parse();
 
-        // Successful completion
+        // if (ErrorHandler::instance().hasErrors(ErrorLevel::SYNTAX)) {
+        //     std::cerr << "\nParsing Failed\n";
+        //     auto syntaxErrors = ErrorHandler::instance().getErrors(ErrorLevel::SYNTAX);
+        //     // Handle syntax errors similarly to lexical errors...
+        //     return EXIT_FAILURE;
+        // }
+
+        // // Semantic Analysis
+        // SymbolTable symbolTable;
+        // SemanticVisitor semanticVisitor(symbolTable);
+        // ast->accept(&semanticVisitor);
+
+        // if (ErrorHandler::instance().hasErrors(ErrorLevel::SEMANTIC)) {
+        //     std::cerr << "\nSemantic Analysis Failed\n";
+        //     auto semanticErrors = ErrorHandler::instance().getErrors(ErrorLevel::SEMANTIC);
+        //     // Handle semantic errors...
+        //     return EXIT_FAILURE;
+        // }
+
+        // // Code Generation
+        // llvm::LLVMContext context;
+        // llvm::IRBuilder<> builder(context);
+        // llvm::Module module("my_module", context);
+
+        // CodeGenerationVisitor codeGenVisitor(context, builder, module);
+        // ast->accept(&codeGenVisitor);
+
+        // if (ErrorHandler::instance().hasErrors(ErrorLevel::CODEGEN)) {
+        //     std::cerr << "\nCode Generation Failed\n";
+        //     auto codegenErrors = ErrorHandler::instance().getErrors(ErrorLevel::CODEGEN);
+        //     // Handle codegen errors...
+        //     return EXIT_FAILURE;
+        // }
+
+        // std::cout << "\nCompilation successful!\n";
         return EXIT_SUCCESS;
     }
     catch (const std::exception& e) {

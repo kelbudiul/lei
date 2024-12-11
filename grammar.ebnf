@@ -1,0 +1,58 @@
+program        → function*
+function       → "fn" type IDENTIFIER "(" parameters? ")" block
+parameters     → parameter ("," parameter)*
+parameter      → IDENTIFIER ":" type
+
+## Types
+type           → basicType | arrayType
+basicType      → "int" | "float" | "bool" | "str"
+arrayType      → basicType "[" (NUMBER | "dynamic")? "]"  # Fixed size or dynamic arrays
+
+## Statements
+block          → "{" statement* "}"
+statement      → varDecl 
+               | ifStmt 
+               | whileStmt 
+               | returnStmt 
+               | printStmt
+               | exprStmt
+
+varDecl        → "var" IDENTIFIER ":" type ("=" initializer)? ";"
+initializer    → expression 
+               | arrayInitializer
+               | "new" basicType "[" expression "]"  # Dynamic array allocation
+
+arrayInitializer → "{" (expression ("," expression)*)? "}"  # Can be empty
+ifStmt         → "if" expression block ("else" block)?
+whileStmt      → "while" expression block
+returnStmt     → "return" expression? ";"
+printStmt      → "print" "(" expression ")" ";"
+exprStmt       → expression ";"
+
+## Expressions
+expression     → assignment
+assignment     → (call ".")? IDENTIFIER assignOp expression
+               | logicalOr
+assignOp       → "=" | "+=" | "-=" | "*=" | "/="
+
+logicalOr      → logicalAnd ("||" logicalAnd)*
+logicalAnd     → equality ("&&" equality)*
+equality       → comparison (("==" | "!=") comparison)*
+comparison     → term (("<" | "<=" | ">" | ">=") term)*
+term           → factor (("+" | "-") factor)*
+factor         → unary (("*" | "/") unary)*
+unary          → ("!" | "-") unary | call
+call           → primary ("(" arguments? ")" | "[" expression "]")*
+primary        → NUMBER | STRING | "true" | "false" | "(" expression ")"
+               | IDENTIFIER | arrayInitializer
+               | arrayAllocation
+
+arrayAllocation → "new" basicType "[" expression "]"
+arguments      → expression ("," expression)*
+
+## Lexical Rules
+NUMBER         → DIGIT+ ("." DIGIT+)?
+STRING         → "\"" <any char except "\"">* "\""
+IDENTIFIER     → ALPHA (ALPHA | DIGIT)*
+ALPHA          → "a"..."z" | "A"..."Z" | "_"
+DIGIT          → "0"..."9"

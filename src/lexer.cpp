@@ -1,29 +1,8 @@
-/**
- * @file lexer.cpp
- * @brief Implementation of the Lexer class
- */
-
 #include "lexer.h"
 #include <cctype>
 #include <sstream>
 #include <algorithm>
 #include <unordered_map>
-
-// Constructor implementation for LexerError
-LexerError::LexerError(const std::string& message, int l, int c, const std::string& d)
-    : std::runtime_error(formatMessage(message, l, c, d))
-    , line(l)
-    , column(c)
-    , details(d) {}
-
-std::string LexerError::formatMessage(const std::string& message, int line, int column, const std::string& details) {
-    std::stringstream ss;
-    ss << "Lexer error at line " << line << ", column " << column << ": " << message;
-    if (!details.empty()) {
-        ss << "\nDetails: " << details;
-    }
-    return ss.str();
-}
 
 // Keyword mapping
 const std::unordered_map<std::string, TokenType> keywords = {
@@ -41,11 +20,9 @@ const std::unordered_map<std::string, TokenType> keywords = {
     {"false", BOOL_LITERAL}
 };
 
-// Token constructor
 Token::Token(TokenType t, const std::string& v, int l, int c)
     : type(t), value(v), line(l), column(c) {}
 
-// Lexer constructor
 Lexer::Lexer(const std::string& code)
     : input(code), pos(0), line(1), column(1) {}
 
@@ -70,12 +47,11 @@ void Lexer::advance() {
 }
 
 std::string Lexer::getCurrentContext() const {
-    const size_t contextSize = 20;  // Changed to size_t
+    const size_t contextSize = 20;
     size_t start = (pos > contextSize) ? pos - contextSize : 0;
     size_t length = std::min(contextSize * 2, input.size() - start);
     std::string context = input.substr(start, length);
     
-    // Add position marker
     if (pos - start < context.length()) {
         context += "\n" + std::string(pos - start, ' ') + "^";
     }
@@ -109,13 +85,11 @@ Token Lexer::handleIdentifier() {
     int startLine = line;
     int startColumn = column;
     
-    // First character is already verified to be alpha or underscore
     while (pos < input.size() && (std::isalnum(peek()) || peek() == '_')) {
         word += peek();
         advance();
     }
     
-    // Check if it's a keyword
     auto it = keywords.find(word);
     if (it != keywords.end()) {
         return Token(it->second, word, startLine, startColumn);
@@ -134,19 +108,27 @@ Token Lexer::handleNumber() {
     while (pos < input.size() && (std::isdigit(peek()) || peek() == '.')) {
         if (peek() == '.') {
             if (isFloat) {
-                throw LexerError("Invalid number format: multiple decimal points",
-                               line, column, "Number so far: " + num);
+                ErrorHandler::instance().error(
+                    ErrorLevel::LEXICAL,
+                    line, column,
+                    "Invalid number format: multiple decimal points found in number '" + num + "'"
+                );
+                return Token(ERROR, num, startLine, startColumn);
             }
             if (num.empty()) {
-                num = "0";  // Add leading zero for .123 format
+                num = "0";
             }
             isFloat = true;
             num += peek();
             advance();
             
             if (!std::isdigit(peek())) {
-                throw LexerError("Invalid float literal: needs at least one digit after decimal point",
-                               line, column, "Number so far: " + num);
+                ErrorHandler::instance().error(
+                    ErrorLevel::LEXICAL,
+                    line, column,
+                    "Invalid float literal: needs at least one digit after decimal point"
+                );
+                return Token(ERROR, num, startLine, startColumn);
             }
         } else {
             if (isFloat) {
@@ -157,10 +139,13 @@ Token Lexer::handleNumber() {
         }
     }
     
-    // Handle trailing decimal point
     if (isFloat && !hasDigitsAfterDot) {
-        throw LexerError("Invalid float literal: needs at least one digit after decimal point",
-                        line, column, "Number so far: " + num);
+        ErrorHandler::instance().error(
+            ErrorLevel::LEXICAL,
+            line, column,
+            "Invalid float literal: needs at least one digit after decimal point"
+        );
+        return Token(ERROR, num, startLine, startColumn);
     }
     
     return Token(isFloat ? FLOAT_LITERAL : NUMBER, num, startLine, startColumn);
@@ -176,10 +161,14 @@ Token Lexer::handleString() {
     while (pos < input.size() && peek() != '"') {
         if (peek() == '\\') {
             if (pos + 1 >= input.size()) {
-                throw LexerError("Unterminated escape sequence",
-                               line, column, "String so far: " + str);
+                ErrorHandler::instance().error(
+                    ErrorLevel::LEXICAL,
+                    line, column,
+                    "Unterminated escape sequence in string"
+                );
+                return Token(ERROR, str, startLine, startColumn);
             }
-            advance(); // Skip backslash
+            advance();
             switch (peek()) {
                 case 'n': str += '\n'; break;
                 case 't': str += '\t'; break;
@@ -187,13 +176,20 @@ Token Lexer::handleString() {
                 case '"': str += '"'; break;
                 case '\\': str += '\\'; break;
                 default:
-                    throw LexerError("Invalid escape sequence",
-                                   line, column,
-                                   "Invalid escape character: \\" + std::string(1, peek()));
+                    ErrorHandler::instance().error(
+                        ErrorLevel::LEXICAL,
+                        line, column,
+                        "Invalid escape sequence '\\" + std::string(1, peek()) + "'"
+                    );
+                    return Token(ERROR, str, startLine, startColumn);
             }
         } else if (peek() == '\n') {
-            throw LexerError("Unterminated string literal: newline in string",
-                           line, column, "String so far: " + str);
+            ErrorHandler::instance().error(
+                ErrorLevel::LEXICAL,
+                line, column,
+                "Unterminated string literal: newline in string"
+            );
+            return Token(ERROR, str, startLine, startColumn);
         } else {
             str += peek();
         }
@@ -201,9 +197,12 @@ Token Lexer::handleString() {
     }
     
     if (pos >= input.size()) {
-        throw LexerError("Unterminated string literal",
-                        startLine, startColumn,
-                        "String so far: " + str + "\nContext:\n" + getCurrentContext());
+        ErrorHandler::instance().error(
+            ErrorLevel::LEXICAL,
+            startLine, startColumn,
+            "Unterminated string literal"
+        );
+        return Token(ERROR, str, startLine, startColumn);
     }
     
     advance(); // Skip closing quote
@@ -213,152 +212,159 @@ Token Lexer::handleString() {
 std::vector<Token> Lexer::tokenize() {
     std::vector<Token> tokens;
     
-    try {
-        while (pos < input.size()) {
-            skipWhitespaceAndComments();
+    while (pos < input.size()) {
+        skipWhitespaceAndComments();
+        
+        if (pos >= input.size()) break;
+        
+        int startLine = line;
+        int startColumn = column;
+        char current = peek();
+        
+        if (std::isalpha(current) || current == '_') {
+            tokens.push_back(handleIdentifier());
+        }
+        else if (std::isdigit(current) || (current == '.' && std::isdigit(peekNext()))) {
+            Token token = handleNumber();
+            tokens.push_back(token);
+            if (token.type == ERROR) continue;
+        }
+        else if (current == '"') {
+            Token token = handleString();
+            tokens.push_back(token);
+            if (token.type == ERROR) continue;
+        }
+        else {
+            advance();
+            Token token(ERROR, "", startLine, startColumn);
+            bool validToken = true;
             
-            if (pos >= input.size()) break;
-            
-            int startLine = line;
-            int startColumn = column;
-            char current = peek();
-            
-            // Handle different token types
-            if (std::isalpha(current) || current == '_') {
-                tokens.push_back(handleIdentifier());
-            }
-            else if (std::isdigit(current) || (current == '.' && std::isdigit(peekNext()))) {
-                tokens.push_back(handleNumber());
-            }
-            else if (current == '"') {
-                tokens.push_back(handleString());
-            }
-            else {
-                // Handle operators and special characters
-                advance();
-                switch (current) {
-                    case '+':
-                        if (peek() == '=') {
-                            advance();
-                            tokens.emplace_back(PLUS_EQUALS, "+=", startLine, startColumn);
-                        } else {
-                            tokens.emplace_back(PLUS, "+", startLine, startColumn);
-                        }
-                        break;
-                        
-                    case '-':
-                        if (peek() == '=') {
-                            advance();
-                            tokens.emplace_back(MINUS_EQUALS, "-=", startLine, startColumn);
-                        } else {
-                            tokens.emplace_back(MINUS, "-", startLine, startColumn);
-                        }
-                        break;
-                        
-                    case '*':
-                        if (peek() == '=') {
-                            advance();
-                            tokens.emplace_back(STAR_EQUALS, "*=", startLine, startColumn);
-                        } else {
-                            tokens.emplace_back(STAR, "*", startLine, startColumn);
-                        }
-                        break;
-                        
-                    case '/':
-                        if (peek() == '=') {
-                            advance();
-                            tokens.emplace_back(SLASH_EQUALS, "/=", startLine, startColumn);
-                        } else {
-                            tokens.emplace_back(SLASH, "/", startLine, startColumn);
-                        }
-                        break;
-                        
-                    case '=':
-                        if (peek() == '=') {
-                            advance();
-                            tokens.emplace_back(EQUALS_EQUALS, "==", startLine, startColumn);
-                        } else {
-                            tokens.emplace_back(EQUALS, "=", startLine, startColumn);
-                        }
-                        break;
-                        
-                    case '!':
-                        if (peek() == '=') {
-                            advance();
-                            tokens.emplace_back(NOT_EQUALS, "!=", startLine, startColumn);
-                        } else {
-                            tokens.emplace_back(NOT, "!", startLine, startColumn);
-                        }
-                        break;
-                        
-                    case '<':
-                        if (peek() == '=') {
-                            advance();
-                            tokens.emplace_back(LESS_EQUAL, "<=", startLine, startColumn);
-                        } else {
-                            tokens.emplace_back(LESS, "<", startLine, startColumn);
-                        }
-                        break;
-                        
-                    case '>':
-                        if (peek() == '=') {
-                            advance();
-                            tokens.emplace_back(GREATER_EQUAL, ">=", startLine, startColumn);
-                        } else {
-                            tokens.emplace_back(GREATER, ">", startLine, startColumn);
-                        }
-                        break;
-                        
-                    case '&':
-                        if (peek() == '&') {
-                            advance();
-                            tokens.emplace_back(AND, "&&", startLine, startColumn);
-                        } else {
-                            throw LexerError("Unexpected character", startLine, startColumn,
-                                           "Expected '&&' for logical AND operator");
-                        }
-                        break;
-                        
-                    case '|':
-                        if (peek() == '|') {
-                            advance();
-                            tokens.emplace_back(OR, "||", startLine, startColumn);
-                        } else {
-                            throw LexerError("Unexpected character", startLine, startColumn,
-                                           "Expected '||' for logical OR operator");
-                        }
-                        break;
-                        
-                    // Delimiters
-                    case '{': tokens.emplace_back(LBRACE, "{", startLine, startColumn); break;
-                    case '}': tokens.emplace_back(RBRACE, "}", startLine, startColumn); break;
-                    case '(': tokens.emplace_back(LPAREN, "(", startLine, startColumn); break;
-                    case ')': tokens.emplace_back(RPAREN, ")", startLine, startColumn); break;
-                    case '[': tokens.emplace_back(LBRACKET, "[", startLine, startColumn); break;
-                    case ']': tokens.emplace_back(RBRACKET, "]", startLine, startColumn); break;
-                    case ';': tokens.emplace_back(SEMICOLON, ";", startLine, startColumn); break;
-                    case ':': tokens.emplace_back(COLON, ":", startLine, startColumn); break;
-                    case ',': tokens.emplace_back(COMMA, ",", startLine, startColumn); break;
+            switch (current) {
+                case '+':
+                    if (peek() == '=') {
+                        advance();
+                        token = Token(PLUS_EQUALS, "+=", startLine, startColumn);
+                    } else {
+                        token = Token(PLUS, "+", startLine, startColumn);
+                    }
+                    break;
                     
-                    default:
-                        throw LexerError("Unexpected character",
-                                       startLine, startColumn,
-                                       "Character: '" + std::string(1, current) + "'\n" +
-                                       "Context:\n" + getCurrentContext());
-                }
+                case '-':
+                    if (peek() == '=') {
+                        advance();
+                        token = Token(MINUS_EQUALS, "-=", startLine, startColumn);
+                    } else {
+                        token = Token(MINUS, "-", startLine, startColumn);
+                    }
+                    break;
+                    
+                case '*':
+                    if (peek() == '=') {
+                        advance();
+                        token = Token(STAR_EQUALS, "*=", startLine, startColumn);
+                    } else {
+                        token = Token(STAR, "*", startLine, startColumn);
+                    }
+                    break;
+                    
+                case '/':
+                    if (peek() == '=') {
+                        advance();
+                        token = Token(SLASH_EQUALS, "/=", startLine, startColumn);
+                    } else {
+                        token = Token(SLASH, "/", startLine, startColumn);
+                    }
+                    break;
+                    
+                case '=':
+                    if (peek() == '=') {
+                        advance();
+                        token = Token(EQUALS_EQUALS, "==", startLine, startColumn);
+                    } else {
+                        token = Token(EQUALS, "=", startLine, startColumn);
+                    }
+                    break;
+                    
+                case '!':
+                    if (peek() == '=') {
+                        advance();
+                        token = Token(NOT_EQUALS, "!=", startLine, startColumn);
+                    } else {
+                        token = Token(NOT, "!", startLine, startColumn);
+                    }
+                    break;
+                    
+                case '<':
+                    if (peek() == '=') {
+                        advance();
+                        token = Token(LESS_EQUAL, "<=", startLine, startColumn);
+                    } else {
+                        token = Token(LESS, "<", startLine, startColumn);
+                    }
+                    break;
+                    
+                case '>':
+                    if (peek() == '=') {
+                        advance();
+                        token = Token(GREATER_EQUAL, ">=", startLine, startColumn);
+                    } else {
+                        token = Token(GREATER, ">", startLine, startColumn);
+                    }
+                    break;
+                    
+                case '&':
+                    if (peek() == '&') {
+                        advance();
+                        token = Token(AND, "&&", startLine, startColumn);
+                    } else {
+                        ErrorHandler::instance().error(
+                            ErrorLevel::LEXICAL,
+                            startLine, startColumn,
+                            "Expected '&&' for logical AND operator"
+                        );
+                        validToken = false;
+                    }
+                    break;
+                    
+                case '|':
+                    if (peek() == '|') {
+                        advance();
+                        token = Token(OR, "||", startLine, startColumn);
+                    } else {
+                        ErrorHandler::instance().error(
+                            ErrorLevel::LEXICAL,
+                            startLine, startColumn,
+                            "Expected '||' for logical OR operator"
+                        );
+                        validToken = false;
+                    }
+                    break;
+                    
+                case '{': token = Token(LBRACE, "{", startLine, startColumn); break;
+                case '}': token = Token(RBRACE, "}", startLine, startColumn); break;
+                case '(': token = Token(LPAREN, "(", startLine, startColumn); break;
+                case ')': token = Token(RPAREN, ")", startLine, startColumn); break;
+                case '[': token = Token(LBRACKET, "[", startLine, startColumn); break;
+                case ']': token = Token(RBRACKET, "]", startLine, startColumn); break;
+                case ';': token = Token(SEMICOLON, ";", startLine, startColumn); break;
+                case ':': token = Token(COLON, ":", startLine, startColumn); break;
+                case ',': token = Token(COMMA, ",", startLine, startColumn); break;
+                    
+                default:
+                    ErrorHandler::instance().error(
+                        ErrorLevel::LEXICAL,
+                        startLine, startColumn,
+                        "Unexpected character '" + std::string(1, current) + "'"
+                    );
+                    validToken = false;
+            }
+            
+            if (validToken) {
+                tokens.push_back(token);
             }
         }
-        
-        // Add end token
-        tokens.emplace_back(END, "", line, column);
-        return tokens;
     }
-    catch (const LexerError& e) {
-        throw; // Re-throw lexer errors as they already have proper formatting
-    }
-    catch (const std::exception& e) {
-        // Wrap other exceptions with position information
-        throw LexerError(e.what(), line, column,
-                        "Context:\n" + getCurrentContext());
-    }
+    
+    tokens.emplace_back(END, "", line, column);
+    return tokens;
 }
