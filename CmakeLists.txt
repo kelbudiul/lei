@@ -1,15 +1,19 @@
 # Specify minimum CMake version required
+# Version 3.10 provides good modern CMake features we need
 cmake_minimum_required(VERSION 3.10)
 
 # Define project name and version
+# This sets variables like PROJECT_NAME, PROJECT_VERSION, etc.
 project(LeiCompiler VERSION 1.0)
 
 # Set C++ standard requirements
+# We use C++17 for std::variant, std::optional, and other modern features
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)  # Ensure C++17 is available
+set(CMAKE_CXX_EXTENSIONS OFF)        # Disable compiler-specific extensions
 
 # WSL/Linux compiler selection
+# Prefer Clang++ for better LLVM compatibility
 if(EXISTS "/usr/bin/clang++")
     set(CMAKE_CXX_COMPILER "/usr/bin/clang++")
     message(STATUS "Using Clang compiler")
@@ -18,136 +22,79 @@ else()
     message(STATUS "Using GCC compiler")
 endif()
 
-# Find required packages
-find_package(LLVM REQUIRED CONFIG)
+
+# Find GTest
 find_package(GTest REQUIRED)
 
+# Find and configure LLVM
+# This sets up all necessary LLVM compilation and linking flags
+find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
 # Add LLVM compilation flags and include paths
+# These are necessary for using LLVM headers and libraries
 add_definitions(${LLVM_DEFINITIONS})
 include_directories(${LLVM_INCLUDE_DIRS})
 
-# Define source files (no duplication)
-set(COMPILER_SOURCES
-    src/lexer.cpp
-    src/source_reader.cpp
+# Define source files
+# List all implementation (.cpp) files that need to be compiled
+set(SOURCES
+    src/ast.cpp             # Abstract Syntax Tree implementation
+    #src/codegen_visitor.cpp # LLVM IR code generation visitor
+    src/lexer.cpp          # Lexical analyzer
+    src/ast_printer.cpp
+    src/main.cpp           # Main program entry
+    src/parser.cpp         # Parser implementation
     src/error_handler.cpp
-    src/token.cpp
+    #src/semantic_visitor.cpp # Semantic analysis visitor
+    src/source_reader.cpp   # Source file reading utilities
+    #src/symbol_table.cpp    # Symbol table management
+    #src/visitor.cpp         # Base visitor pattern implementation
 )
 
-# Create a static library from the compiler components
-add_library(${PROJECT_NAME}_lib STATIC ${COMPILER_SOURCES})
+# Create the executable target
+# This defines our main compilation target
+add_executable(${PROJECT_NAME} ${SOURCES})
 
-# Set up include directories for the library
-target_include_directories(${PROJECT_NAME}_lib PUBLIC
-    ${CMAKE_CURRENT_SOURCE_DIR}/include
-    ${CMAKE_CURRENT_SOURCE_DIR}/src
+# Set up include directories
+# These paths will be searched for header files
+target_include_directories(${PROJECT_NAME} PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include  # For common.h and other shared headers
+    ${CMAKE_CURRENT_SOURCE_DIR}/src      # For internal project headers
 )
 
-# Configure compiler options for the library
-target_compile_options(${PROJECT_NAME}_lib PRIVATE 
-    -Wall
-    -Wextra
-    -Wpedantic
-    -fPIC
-)
-
-# Create the main executable
-add_executable(${PROJECT_NAME} src/main.cpp)
-
-# Link the main executable with our library and LLVM
+# Configure LLVM libraries
+# Map required LLVM components to their library names
 llvm_map_components_to_libnames(llvm_libs
-    Support
-    Core
-    IRReader
-    OrcJIT
-    native
+    Support    # Basic LLVM support utilities
+    Core       # Core LLVM functionality
+    IRReader   # IR reading capabilities
+    OrcJIT     # JIT compilation support
+    native     # Native target support
 )
 
+# Link LLVM libraries to our target
 target_link_libraries(${PROJECT_NAME} PRIVATE
-    ${PROJECT_NAME}_lib
     ${llvm_libs}
+)
+
+# Set compiler warning flags and options
+# Enable all reasonable warnings and make them errors
+target_compile_options(${PROJECT_NAME} PRIVATE 
+    -Wall      # Enable all common warnings
+    -Wextra    # Enable extra warnings
+    -Wpedantic # Enable strict ISO C++ warnings
+    -fPIC      # Generate position-independent code
 )
 
 # Configure output directories
+# Organize build artifacts in a clean directory structure
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 set(CMAKE_LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/lib)
 
-# Enable testing
-enable_testing()
-
-# Create test executable
-add_executable(${PROJECT_NAME}_tests
-    tests/lexer_tests.cpp
-)
-
-# Link test executable with Google Test and our library
-target_link_libraries(${PROJECT_NAME}_tests PRIVATE
-    ${PROJECT_NAME}_lib
-    GTest::gtest_main
-    GTest::gtest
-    ${llvm_libs}
-)
-
-# Add the test to CTest
-include(GoogleTest)
-gtest_discover_tests(${PROJECT_NAME}_tests)
-
-# Installation rules
-install(TARGETS 
-    ${PROJECT_NAME}
-    ${PROJECT_NAME}_lib
-    RUNTIME DESTINATION bin
-    LIBRARY DESTINATION lib
-    ARCHIVE DESTINATION lib
-)
-
-# Enable testing
-enable_testing()
-
-# Define test categories
-set(TEST_CATEGORIES
-    lexer
-    # parser
-    # semantic
-    # codegen
-)
-
-# Create test executable for each category
-foreach(category ${TEST_CATEGORIES})
-    # Create executable name
-    set(test_target "${PROJECT_NAME}_${category}_tests")
-    
-    # Add executable
-    add_executable(${test_target}
-        tests/${category}_tests.cpp
-    )
-    
-    # Link with library and test framework
-    target_link_libraries(${test_target} PRIVATE
-        ${PROJECT_NAME}_lib
-        GTest::gtest_main
-        GTest::gtest
-        ${llvm_libs}
-    )
-    
-    # Add to CTest
-    gtest_discover_tests(${test_target}
-        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/tests
-        TEST_PREFIX "${category}:"
-    )
-    
-    # Set output directory
-    set_target_properties(${test_target} PROPERTIES
-        RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin/tests
-    )
-endforeach()
-
-# Optional: Add a custom target to run all tests
-add_custom_target(check
-    COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
-    DEPENDS ${TEST_TARGETS}
-    WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
+# Define installation rules
+# Specify where the compiled executable should be installed
+install(TARGETS ${PROJECT_NAME}
+    RUNTIME DESTINATION bin  # Install executable to <prefix>/bin
 )

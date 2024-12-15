@@ -1,181 +1,261 @@
-// ast.h
 #ifndef AST_H
 #define AST_H
 
-#include "../include/common.h"
+#include <vector>
+#include <memory>
+#include <string>
+#include "token.h"
 #include "visitor.h"
 
-struct ASTNode : Visitable {
+// Forward declarations
+class Visitor;
+
+// Base AST node class
+class ASTNode {
+public:
     virtual ~ASTNode() = default;
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+    virtual void accept(Visitor* visitor) = 0;
 };
 
-struct ExpressionAST : ASTNode {
-    virtual Type getType() const = 0;
+// Expression node base class
+class Expr : public ASTNode {
+public:
+    virtual ~Expr() = default;
 };
 
-struct StatementAST : ASTNode {};
+// Statement node base class
+class Stmt : public ASTNode {
+public:
+    virtual ~Stmt() = default;
+};
 
-struct BlockAST : StatementAST {
-    std::vector<std::unique_ptr<StatementAST>> statements;
+// Type representation
+struct Type {
+    std::string name;
+    bool isArray;
+    int arraySize;  // -1 for dynamic arrays
     
-    BlockAST() = default;
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+    Type(const std::string& n, bool arr = false, int size = 0)
+        : name(n), isArray(arr), arraySize(size) {}
 };
 
-struct FunctionAST : ASTNode {
-    std::string name;
-    std::string returnType;
-    std::vector<std::pair<std::string, std::string>> parameters;
-    std::unique_ptr<BlockAST> body;
-
-    FunctionAST(const std::string& name, 
-                const std::string& returnType,
-                std::vector<std::pair<std::string, std::string>> params,
-                std::unique_ptr<BlockAST> body);
-
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+// Literal expression nodes
+class NumberExpr : public Expr {
+public:
+    Token token;
+    bool isFloat;
+    
+    NumberExpr(const Token& t, bool isF) : token(t), isFloat(isF) {}
+    void accept(Visitor* visitor) override;
 };
 
-struct VariableDeclarationAST : StatementAST {
-    std::string name;
-    std::string type;
-    std::unique_ptr<ExpressionAST> initializer;
-
-    VariableDeclarationAST(const std::string& name, 
-                          const std::string& type,
-                          std::unique_ptr<ExpressionAST> init = nullptr);
-
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+class StringExpr : public Expr {
+public:
+    Token token;
+    
+    explicit StringExpr(const Token& t) : token(t) {}
+    void accept(Visitor* visitor) override;
 };
 
-struct AssignmentAST : StatementAST {
-    std::string name;
-    std::unique_ptr<ExpressionAST> value;
-    std::string op; // "=", "+=", "-=", "*=", "/="
-
-    AssignmentAST(const std::string& name,
-                 std::unique_ptr<ExpressionAST> value,
-                 const std::string& op = "=");
-
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+class BoolExpr : public Expr {
+public:
+    Token token;
+    bool value;
+    
+    BoolExpr(const Token& t, bool v) : token(t), value(v) {}
+    void accept(Visitor* visitor) override;
 };
 
-struct IfStatementAST : StatementAST {
-    std::unique_ptr<ExpressionAST> condition;
-    std::unique_ptr<BlockAST> thenBlock;
-    std::unique_ptr<BlockAST> elseBlock;
-
-    IfStatementAST(std::unique_ptr<ExpressionAST> cond,
-                   std::unique_ptr<BlockAST> thenB,
-                   std::unique_ptr<BlockAST> elseB = nullptr);
-
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+// Variable reference
+class VariableExpr : public Expr {
+public:
+    Token name;
+    
+    explicit VariableExpr(const Token& n) : name(n) {}
+    void accept(Visitor* visitor) override;
 };
 
-struct WhileStatementAST : StatementAST {
-    std::unique_ptr<ExpressionAST> condition;
-    std::unique_ptr<BlockAST> body;
-
-    WhileStatementAST(std::unique_ptr<ExpressionAST> cond,
-                      std::unique_ptr<BlockAST> body);
-
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+// Array access expression
+class ArrayAccessExpr : public Expr {
+public:
+    std::unique_ptr<Expr> array;
+    std::unique_ptr<Expr> index;
+    
+    ArrayAccessExpr(std::unique_ptr<Expr> arr, std::unique_ptr<Expr> idx)
+        : array(std::move(arr)), index(std::move(idx)) {}
+    void accept(Visitor* visitor) override;
 };
 
-struct ReturnAST : StatementAST {
-    std::unique_ptr<ExpressionAST> value;
-
-    ReturnAST(std::unique_ptr<ExpressionAST> value);
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+// Binary expression
+class BinaryExpr : public Expr {
+public:
+    std::unique_ptr<Expr> left;
+    Token op;
+    std::unique_ptr<Expr> right;
+    
+    BinaryExpr(std::unique_ptr<Expr> l, const Token& o, std::unique_ptr<Expr> r)
+        : left(std::move(l)), op(o), right(std::move(r)) {}
+    void accept(Visitor* visitor) override;
 };
 
-struct LiteralAST : ExpressionAST {
-    std::variant<int, float, bool, std::string> value;
+// Unary expression
+class UnaryExpr : public Expr {
+public:
+    Token op;
+    std::unique_ptr<Expr> expr;
+    
+    UnaryExpr(const Token& o, std::unique_ptr<Expr> e)
+        : op(o), expr(std::move(e)) {}
+    void accept(Visitor* visitor) override;
+};
+
+class TypeExpr : public Expr {
+public:
     Type type;
-
-    LiteralAST(const std::variant<int, float, bool, std::string>& val);
-    Type getType() const override { return type; }
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+    
+    explicit TypeExpr(const Type& t) : type(t) {}
+    void accept(Visitor* visitor) override;
 };
 
-struct VariableDeclarationAST : StatementAST {
-    std::string name;
-    std::string type;
-    std::unique_ptr<ExpressionAST> initializer;  // Can be nullptr for uninitialized variables
-
-    VariableDeclarationAST(const std::string& name, 
-                          const std::string& type,
-                          std::unique_ptr<ExpressionAST> init = nullptr)
-        : name(name), type(type), initializer(std::move(init)) {}
-
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+// Assignment expression
+class AssignExpr : public Expr {
+public:
+    std::unique_ptr<Expr> target;  // VariableExpr or ArrayAccessExpr
+    Token op;  // = += -= *= /=
+    std::unique_ptr<Expr> value;
+    
+    AssignExpr(std::unique_ptr<Expr> t, const Token& o, std::unique_ptr<Expr> v)
+        : target(std::move(t)), op(o), value(std::move(v)) {}
+    void accept(Visitor* visitor) override;
 };
 
-struct CallExprAST : ExpressionAST {
-    std::string callee;
-    std::vector<std::unique_ptr<ExpressionAST>> arguments;
+// Function call
+class CallExpr : public Expr {
+public:
+    Token name;
+    std::vector<std::unique_ptr<Expr>> arguments;
+    
+    CallExpr(const Token& n, std::vector<std::unique_ptr<Expr>> args)
+        : name(n), arguments(std::move(args)) {}
+    void accept(Visitor* visitor) override;
+};
+
+// Array initialization
+class ArrayInitExpr : public Expr {
+public:
+    std::vector<std::unique_ptr<Expr>> elements;
+    
+    explicit ArrayInitExpr(std::vector<std::unique_ptr<Expr>> elems)
+        : elements(std::move(elems)) {}
+    void accept(Visitor* visitor) override;
+};
+
+// Array allocation
+class ArrayAllocExpr : public Expr {
+public:
+    Type elementType;
+    std::unique_ptr<Expr> size;
+    
+    ArrayAllocExpr(const Type& type, std::unique_ptr<Expr> s)
+        : elementType(type), size(std::move(s)) {}
+    void accept(Visitor* visitor) override;
+};
+
+// Statement nodes
+class ExprStmt : public Stmt {
+public:
+    std::unique_ptr<Expr> expr;
+    
+    explicit ExprStmt(std::unique_ptr<Expr> e) : expr(std::move(e)) {}
+    void accept(Visitor* visitor) override;
+};
+
+class VarDeclStmt : public Stmt {
+public:
+    Token name;
     Type type;
-
-    CallExprAST(const std::string& callee,
-                std::vector<std::unique_ptr<ExpressionAST>> args);
-    Type getType() const override { return type; }
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+    std::unique_ptr<Expr> initializer;
+    
+    VarDeclStmt(const Token& n, const Type& t, std::unique_ptr<Expr> init = nullptr)
+        : name(n), type(t), initializer(std::move(init)) {}
+    void accept(Visitor* visitor) override;
 };
 
-
-struct BinaryExprAST : ExpressionAST {
-    enum class Op {
-        Add, Sub, Mul, Div,
-        Eq, NotEq, Less, LessEq, Greater, GreaterEq,
-        And, Or
-    };
+class BlockStmt : public Stmt {
+public:
+    std::vector<std::unique_ptr<Stmt>> statements;
     
-    Op op;
-    std::unique_ptr<ExpressionAST> left;
-    std::unique_ptr<ExpressionAST> right;
-    
-    BinaryExprAST(Op op, 
-                  std::unique_ptr<ExpressionAST> left,
-                  std::unique_ptr<ExpressionAST> right)
-        : op(op), left(std::move(left)), right(std::move(right)) {}
-    
-    Type getType() const override {
-        switch (op) {
-            case Op::Eq:
-            case Op::NotEq:
-            case Op::Less:
-            case Op::LessEq:
-            case Op::Greater:
-            case Op::GreaterEq:
-            case Op::And:
-            case Op::Or:
-                return Type::Bool;
-            default:
-                return left->getType(); // Arithmetic ops preserve type
-        }
-    }
-    
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+    explicit BlockStmt(std::vector<std::unique_ptr<Stmt>> stmts)
+        : statements(std::move(stmts)) {}
+    void accept(Visitor* visitor) override;
 };
 
-struct UnaryExprAST : ExpressionAST {
-    enum class Op {
-        Neg,  // -
-        Not   // !
-    };
+class IfStmt : public Stmt {
+public:
+    std::unique_ptr<Expr> condition;
+    std::unique_ptr<Stmt> thenBranch;
+    std::unique_ptr<Stmt> elseBranch;
     
-    Op op;
-    std::unique_ptr<ExpressionAST> operand;
-    
-    UnaryExprAST(Op op, std::unique_ptr<ExpressionAST> operand)
-        : op(op), operand(std::move(operand)) {}
-        
-    Type getType() const override {
-        return op == Op::Not ? Type::Bool : operand->getType();
-    }
-    
-    void accept(Visitor* visitor) override { visitor->visit(this); }
+    IfStmt(std::unique_ptr<Expr> cond, std::unique_ptr<Stmt> thenB,
+           std::unique_ptr<Stmt> elseB = nullptr)
+        : condition(std::move(cond)), thenBranch(std::move(thenB)),
+          elseBranch(std::move(elseB)) {}
+    void accept(Visitor* visitor) override;
 };
+
+class WhileStmt : public Stmt {
+public:
+    std::unique_ptr<Expr> condition;
+    std::unique_ptr<Stmt> body;
+    
+    WhileStmt(std::unique_ptr<Expr> cond, std::unique_ptr<Stmt> b)
+        : condition(std::move(cond)), body(std::move(b)) {}
+    void accept(Visitor* visitor) override;
+};
+
+class ReturnStmt : public Stmt {
+public:
+    Token keyword;
+    std::unique_ptr<Expr> value;
+    
+    ReturnStmt(const Token& kw, std::unique_ptr<Expr> val = nullptr)
+        : keyword(kw), value(std::move(val)) {}
+    void accept(Visitor* visitor) override;
+};
+
+// Function parameter
+struct Parameter {
+    Token name;
+    Type type;
+    
+    Parameter(const Token& n, const Type& t) : name(n), type(t) {}
+};
+
+// Function declaration
+class FunctionDecl : public ASTNode {
+public:
+    Token name;
+    Type returnType;
+    std::vector<Parameter> parameters;
+    std::unique_ptr<BlockStmt> body;
+    
+    FunctionDecl(const Token& n, const Type& rt,
+                std::vector<Parameter> params,
+                std::unique_ptr<BlockStmt> b)
+        : name(n), returnType(rt), parameters(std::move(params)),
+          body(std::move(b)) {}
+    void accept(Visitor* visitor) override;
+};
+
+// Program node (top-level)
+class Program : public ASTNode {
+public:
+    std::vector<std::unique_ptr<FunctionDecl>> functions;
+    
+    explicit Program(std::vector<std::unique_ptr<FunctionDecl>> funcs)
+        : functions(std::move(funcs)) {}
+    void accept(Visitor* visitor) override;
+};
+
 
 #endif // AST_H
