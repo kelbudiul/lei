@@ -9,7 +9,7 @@ fn int incrementInt(a: int, condition: bool){
 fn int incrementIntHundredTimes(a: int) {
     var counter: int = 100;
 
-    while counter {
+    while true {
         a += 1;
         counter -= 1;
     }
@@ -27,13 +27,13 @@ fn int main() {
     var fixed: int[3];         // [0,0,0]
     
     // Allocate array of 5 integers
-    var arr: int[] = malloc(5 * sizeof(int));
+    var arr1: int[] = malloc(5 * sizeof(int));
 
     // Resize array to 10 integers
-    arr = realloc(arr, 10 * sizeof(int));
+    arr1 = realloc(arr, 10 * sizeof(int));
 
     // Free memory when done
-    free(arr);
+    free(arr1);
 
     
     // Partial array initialization
@@ -44,7 +44,7 @@ fn int main() {
     var b: bool = true;
     var i: int = 42;
 
-    var arr: float[5] = {1.12, 2.143, 3.12, 4.69, 5.55};
+    var arr2: float[5] = {1.12, 2.143, 3.12, 4.69, 5.55};
     
     x += 1.3;  // x is now 4.14
     i *= 2;    // i is now 84

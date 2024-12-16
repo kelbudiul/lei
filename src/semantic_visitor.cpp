@@ -1,120 +1,518 @@
 #include "semantic_visitor.h"
+#include "error_handler.h"
 
-SemanticVisitor::SemanticVisitor(SymbolTable& table) 
-    : symbolTable(table), currentFunction(""), currentReturnType(Type::Void) {}
+// isConditionExpr() to check if an expression can evaluate to a boolean
+bool SemanticAnalyzer::isConditionExpr(Expr* expr) {
+    if (!expr) return false;
 
-bool SemanticVisitor::isAssignable(Type from, Type to) {
-    if (from == to) return true;
+    // If it's a binary expression
+    if (auto* binary = dynamic_cast<BinaryExpr*>(expr)) {
+        switch (binary->op.type) {
+            // Comparison operators
+            case LESS:
+            case LESS_EQUAL:
+            case GREATER:
+            case GREATER_EQUAL:
+            case EQUALS_EQUALS:
+            case NOT_EQUALS:
+                return true;
+            
+            // Logical operators
+            case AND:
+            case OR:
+                return true;
+            
+            default:
+                return false;
+        }
+    }
     
-    // Allow int to float conversion
-    if (from == Type::Int && to == Type::Float) return true;
-    
-    return false;
+    // If it's a unary NOT operation
+    if (auto* unary = dynamic_cast<UnaryExpr*>(expr)) {
+        return unary->op.type == NOT;
+    }
+
+    // If it's a direct boolean value or expression
+    auto exprType = getExprType(expr);
+    return exprType && exprType->name == "bool";
 }
 
-bool SemanticVisitor::isComparable(Type left, Type right) {
-    if (left == right) return true;
+
+bool SemanticAnalyzer::analyze(Program* program) {
+    if (!program) return false;
     
-    // Allow comparing ints and floats
-    if ((left == Type::Int && right == Type::Float) ||
-        (left == Type::Float && right == Type::Int)) return true;
+    // Clear any previous state
+    symbolTable = SymbolTable();
     
-    return false;
+    // Analyze the program
+    program->accept(this);
+    
+    // Return true if no semantic errors were found
+    return !ErrorHandler::instance().hasErrors(ErrorLevel::SEMANTIC);
 }
 
-void SemanticVisitor::visit(FunctionAST* node) {
-    // Check for duplicate function
-    if (symbolTable.exists(node->name)) {
-        error("Function " + node->name + " already declared");
-        return;
+void SemanticAnalyzer::visit(Program* node) {
+    // First pass: declare all functions (enables forward references)
+    for (const auto& func : node->functions) {
+        if (!symbolTable.declareFunction(func->name.value, func->returnType, func->parameters)) {
+            ErrorHandler::instance().error(
+                ErrorLevel::SEMANTIC,
+                func->name.line,
+                func->name.column,
+                "Duplicate function declaration: " + func->name.value
+            );
+        }
     }
     
-    // Add function to symbol table
-    FunctionSymbol func;
-    func.name = node->name;
-    func.returnType = stringToType(node->returnType);
+    // Second pass: analyze function bodies
+    for (const auto& func : node->functions) {
+        func->accept(this);
+    }
+}
+
+void SemanticAnalyzer::visit(FunctionDecl* node) {
+    // Check if this is the main function
+    if (node->name.value == "main") {
+        mainFound = validateMainFunction(node);
+    }
+    symbolTable.enterScope(); // Enter function scope
+    currentFunctionReturnType = node->returnType;
     
+
+    // Declare parameters in function scope
     for (const auto& param : node->parameters) {
-        func.paramTypes.push_back(stringToType(param.second));
+        if (!symbolTable.declare(param.name.value, param.type)) {
+            ErrorHandler::instance().error(
+                ErrorLevel::SEMANTIC,
+                param.name.line,
+                param.name.column,
+                "Duplicate parameter name: " + param.name.value
+            );
+        }
     }
     
-    symbolTable.addFunction(func);
-    
-    // Set up function context
-    currentFunction = node->name;
-    currentReturnType = func.returnType;
-    
-    // Create new scope for parameters
-    symbolTable.enterScope();
-    
-    // Add parameters to symbol table
-    for (const auto& param : node->parameters) {
-        symbolTable.addVariable(param.first, stringToType(param.second));
-    }
-    
-    // Visit function body
+    // Analyze function body
     node->body->accept(this);
     
-    // Clean up
-    symbolTable.exitScope();
-    currentFunction = "";
-    currentReturnType = Type::Void;
+    symbolTable.exitScope(); // Exit function scope
 }
 
-void SemanticVisitor::visit(BlockAST* node) {
-    symbolTable.enterScope();
+bool SemanticAnalyzer::validateMainFunction(FunctionDecl* func) {
+    return isValidMainSignature(func);
+}
+
+bool SemanticAnalyzer::isValidMainSignature(FunctionDecl* func) {
+    // First check the return type
+    if (func->returnType.name != "int") {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            func->name.line,
+            func->name.column,
+            "Main function must return int, found: " + func->returnType.name
+        );
+        return false;
+    }
+
+    // Allow two forms: main() or main(argc: int, argv: str[])
+    if (func->parameters.empty()) {
+        return true;  // No-argument form is valid
+    }
     
+    // Check command-line arguments form
+    if (func->parameters.size() == 2) {
+        const auto& argc = func->parameters[0];
+        const auto& argv = func->parameters[1];
+        
+        bool valid = true;
+        
+        // Check argc parameter
+        if (argc.type.name != "int" || argc.type.isArray) {
+            ErrorHandler::instance().error(
+                ErrorLevel::SEMANTIC,
+                argc.name.line,
+                argc.name.column,
+                "First parameter of main must be 'argc: int'"
+            );
+            valid = false;
+        }
+        
+        // Check argv parameter
+        if (argv.type.name != "str" || !argv.type.isArray) {
+            ErrorHandler::instance().error(
+                ErrorLevel::SEMANTIC,
+                argv.name.line,
+                argv.name.column,
+                "Second parameter of main must be 'argv: str[]'"
+            );
+            valid = false;
+        }
+        
+        return valid;
+    }
+    
+    // If we get here, we have wrong number of parameters
+    std::string foundParams;
+    for (const auto& param : func->parameters) {
+        if (!foundParams.empty()) foundParams += ", ";
+        foundParams += param.type.name;
+        if (param.type.isArray) foundParams += "[]";
+        foundParams += " " + param.name.value;
+    }
+    
+    ErrorHandler::instance().error(
+        ErrorLevel::SEMANTIC,
+        func->name.line,
+        func->name.column,
+        "Main function must either have no parameters or (argc: int, argv: str[]), found: (" + 
+        foundParams + ")"
+    );
+    return false;
+}
+
+void SemanticAnalyzer::visit(VarDeclStmt* node) {
+    // Check initializer type if present
+    if (node->initializer) {
+        auto initType = getExprType(node->initializer.get());
+        if (initType && !symbolTable.isCompatibleTypes(node->type, *initType)) {
+            ErrorHandler::instance().error(
+                ErrorLevel::SEMANTIC,
+                node->name.line,
+                node->name.column,
+                "Type mismatch in variable declaration. Expected " + 
+                node->type.name + " but got " + initType->name
+            );
+        }
+    }
+    
+    // Declare the variable
+    if (!symbolTable.declare(node->name.value, node->type)) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->name.line,
+            node->name.column,
+            "Variable already declared in this scope: " + node->name.value
+        );
+    }
+}
+
+void SemanticAnalyzer::visit(AssignExpr* node) {
+    auto targetType = getExprType(node->target.get());
+    auto valueType = getExprType(node->value.get());
+    
+    if (!targetType || !valueType) return;
+    
+    if (!symbolTable.isCompatibleTypes(*targetType, *valueType)) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->op.line,
+            node->op.column,
+            "Type mismatch in assignment. Cannot assign " + 
+            valueType->name + " to " + targetType->name
+        );
+    }
+}
+
+void SemanticAnalyzer::visit(BinaryExpr* node) {
+    auto leftType = getExprType(node->left.get());
+    auto rightType = getExprType(node->right.get());
+    
+    if (!leftType || !rightType) return;
+    
+    if (!checkBinaryOperatorTypes(node->op, *leftType, *rightType)) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->op.line,
+            node->op.column,
+            "Invalid operand types for operator " + node->op.value
+        );
+    }
+}
+
+std::optional<Type> SemanticAnalyzer::getExprType(Expr* expr) {
+    if (!expr) return std::nullopt;
+    
+    if (auto* num = dynamic_cast<NumberExpr*>(expr)) {
+        return Type(num->isFloat ? "float" : "int");
+    }
+    else if (auto* str = dynamic_cast<StringExpr*>(expr)) {
+        return Type("str");
+    }
+    else if (auto* boolean = dynamic_cast<BoolExpr*>(expr)) {
+        return Type("bool");
+    }
+    else if (auto* var = dynamic_cast<VariableExpr*>(expr)) {
+        if (auto* symbol = symbolTable.resolve(var->name.value)) {
+            return symbol->type;
+        }
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            var->name.line,
+            var->name.column,
+            "Undefined variable: " + var->name.value
+        );
+    }
+    // Add other expression types as needed
+    
+    return std::nullopt;
+}
+
+bool SemanticAnalyzer::checkBinaryOperatorTypes(const Token& op, const Type& left, const Type& right) {
+    // Arithmetic operators
+    if (op.type == PLUS || op.type == MINUS || op.type == STAR || op.type == SLASH) {
+        return (left.name == "int" || left.name == "float") &&
+               (right.name == "int" || right.name == "float");
+    }
+    
+    // Comparison operators
+    if (op.type == LESS || op.type == LESS_EQUAL || 
+        op.type == GREATER || op.type == GREATER_EQUAL) {
+        return (left.name == "int" || left.name == "float") &&
+               (right.name == "int" || right.name == "float");
+    }
+    
+    // Equality operators
+    if (op.type == EQUALS_EQUALS || op.type == NOT_EQUALS) {
+        return symbolTable.isCompatibleTypes(left, right);
+    }
+    
+    // Logical operators
+    if (op.type == AND || op.type == OR) {
+        return left.name == "bool" && right.name == "bool";
+    }
+    
+    return false;
+}
+
+void SemanticAnalyzer::visit(BlockStmt* node) {
+    symbolTable.enterScope();
     for (const auto& stmt : node->statements) {
         stmt->accept(this);
     }
-    
     symbolTable.exitScope();
 }
 
-void SemanticVisitor::visit(IfStatementAST* node) {
-    // Check condition type
+void SemanticAnalyzer::visit(IfStmt* node) {
     node->condition->accept(this);
-    if (node->condition->getType() != Type::Bool) {
-        error("If condition must be boolean");
-    }
     
-    // Visit branches
-    node->thenBlock->accept(this);
-    if (node->elseBlock) {
-        node->elseBlock->accept(this);
+    if (!isConditionExpr(node->condition.get())) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->condition->loc.line,
+            node->condition->loc.column,
+            "If condition must evaluate to a boolean value"
+        );
+    }
+
+    node->thenBranch->accept(this);
+    if (node->elseBranch) {
+        node->elseBranch->accept(this);
     }
 }
 
-void SemanticVisitor::visit(VariableDeclarationAST* node) {
-    // Check if variable name already exists in current scope
-    if (symbolTable.existsInCurrentScope(node->name)) {
-        error("Variable " + node->name + " already declared in this scope");
+void SemanticAnalyzer::visit(WhileStmt* node) {
+    node->condition->accept(this);
+    
+    if (!isConditionExpr(node->condition.get())) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->condition->loc.line,
+            node->condition->loc.column,
+            "While condition must evaluate to a boolean value"
+        );
+    }
+
+    node->body->accept(this);
+}
+
+void SemanticAnalyzer::visit(ReturnStmt* node) {
+    if (!node->value) {
+        if (currentFunctionReturnType.name != "void") {
+            ErrorHandler::instance().error(
+                ErrorLevel::SEMANTIC,
+                node->keyword.line,
+                node->keyword.column,
+                "Function must return a value of type " + currentFunctionReturnType.name
+            );
+        }
         return;
     }
 
-    Type declaredType = stringToType(node->type);
-    
-    // If there's an initializer, check its type
-    if (node->initializer) {
-        node->initializer->accept(this);
-        Type initType = node->initializer->getType();
-        
-        if (!isAssignable(initType, declaredType)) {
-            error("Cannot initialize variable of type " + 
-                  typeToString(declaredType) + " with value of type " + 
-                  typeToString(initType));
-            return;
-        }
+    auto returnType = getExprType(node->value.get());
+    if (returnType && !symbolTable.isCompatibleTypes(currentFunctionReturnType, *returnType)) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->value->loc.line,
+            node->value->loc.column,
+            "Return type mismatch. Expected " + currentFunctionReturnType.name + 
+            " but got " + returnType->name
+        );
+    }
+}
+
+void SemanticAnalyzer::visit(NumberExpr* node) {
+    // Nothing to check - type is inherent
+}
+
+void SemanticAnalyzer::visit(StringExpr* node) {
+    // Nothing to check - type is inherent
+}
+
+void SemanticAnalyzer::visit(BoolExpr* node) {
+    // Nothing to check - type is inherent
+}
+
+void SemanticAnalyzer::visit(VariableExpr* node) {
+    if (!symbolTable.resolve(node->name.value)) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->name.line,
+            node->name.column,
+            "Undefined variable: " + node->name.value
+        );
+    }
+}
+
+void SemanticAnalyzer::visit(ArrayAccessExpr* node) {
+    auto arrayType = getExprType(node->array.get());
+    auto indexType = getExprType(node->index.get());
+
+    if (!arrayType) return;
+
+    // Check if the type is actually an array
+    if (!arrayType->isArray) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->array->loc.line,
+            node->array->loc.column,
+            "Cannot index non-array type"
+        );
+        return;
     }
 
-    // Add to symbol table
-    symbolTable.addVariable(node->name, declaredType);
+    // Check if index is an integer
+    if (indexType && indexType->name != "int") {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->index->loc.line,
+            node->index->loc.column,
+            "Array index must be an integer"
+        );
+    }
 }
 
-bool SemanticVisitor::hasErrors() const {
-    return !errors.empty();
+void SemanticAnalyzer::visit(UnaryExpr* node) {
+    auto operandType = getExprType(node->expr.get());
+    if (!operandType) return;
+
+    switch (node->op.type) {
+        case MINUS:
+            if (operandType->name != "int" && operandType->name != "float") {
+                ErrorHandler::instance().error(
+                    ErrorLevel::SEMANTIC,
+                    node->op.line,
+                    node->op.column,
+                    "Unary minus requires numeric operand"
+                );
+            }
+            break;
+        case NOT:
+            if (operandType->name != "bool") {
+                ErrorHandler::instance().error(
+                    ErrorLevel::SEMANTIC,
+                    node->op.line,
+                    node->op.column,
+                    "Logical not requires boolean operand"
+                );
+            }
+            break;
+        default:
+            ErrorHandler::instance().error(
+                ErrorLevel::SEMANTIC,
+                node->op.line,
+                node->op.column,
+                "Unknown unary operator"
+            );
+    }
 }
 
-std::vector<std::string> SemanticVisitor::getErrors() const {
-    return errors;
+void SemanticAnalyzer::visit(CallExpr* node) {
+    auto* func = symbolTable.resolveFunction(node->name.value);
+    if (!func) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->name.line,
+            node->name.column,
+            "Undefined function: " + node->name.value
+        );
+        return;
+    }
+
+    // Check argument count
+    if (func->parameters.size() != node->arguments.size()) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->name.line,
+            node->name.column,
+            "Wrong number of arguments to function " + node->name.value +
+            ". Expected " + std::to_string(func->parameters.size()) +
+            " but got " + std::to_string(node->arguments.size())
+        );
+        return;
+    }
+
+    // Check argument types
+    for (size_t i = 0; i < node->arguments.size(); i++) {
+        auto argType = getExprType(node->arguments[i].get());
+        if (argType && !symbolTable.isCompatibleTypes(func->parameters[i].type, *argType)) {
+            ErrorHandler::instance().error(
+                ErrorLevel::SEMANTIC,
+                node->arguments[i]->loc.line,
+                node->arguments[i]->loc.column,
+                "Argument type mismatch. Expected " + func->parameters[i].type.name +
+                " but got " + argType->name
+            );
+        }
+    }
 }
+
+void SemanticAnalyzer::visit(ArrayInitExpr* node) {
+    if (node->elements.empty()) return;
+
+    // Get the type of the first element
+    auto firstType = getExprType(node->elements[0].get());
+    if (!firstType) return;
+
+    // Check that all elements have compatible types
+    for (size_t i = 1; i < node->elements.size(); i++) {
+        auto elemType = getExprType(node->elements[i].get());
+        if (elemType && !symbolTable.isCompatibleTypes(*firstType, *elemType)) {
+            ErrorHandler::instance().error(
+                ErrorLevel::SEMANTIC,
+                node->elements[i]->loc.line,
+                node->elements[i]->loc.column,
+                "Array elements must have compatible types"
+            );
+        }
+    }
+}
+
+void SemanticAnalyzer::visit(ArrayAllocExpr* node) {
+    auto sizeType = getExprType(node->size.get());
+    if (sizeType && sizeType->name != "int") {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->size->loc.line,
+            node->size->loc.column,
+            "Array size must be an integer"
+        );
+    }
+}
+
+void SemanticAnalyzer::visit(ExprStmt* node) {
+    node->expr->accept(this);
+}
+
+void SemanticAnalyzer::visit(TypeExpr* node) {
+    // Nothing to check - type is inherent
+}
+

@@ -1,0 +1,72 @@
+// Test: Missing main function
+fn int helper() {
+    {var x:int = 0;}
+    var y: int = x;
+
+    return y;
+}
+
+// Test: Wrong return type for main
+fn float wrongMain() {
+    return 3.14;
+}
+
+// Test: Wrong parameter count
+fn int badMain1(x: int) {
+    return 0;
+}
+
+// Test: Wrong parameter types
+fn int badMain2(argc: float, args: str[]) {
+    return 0;
+}
+
+fn int badMain3(count: int, args: int[]) {
+    return 0;
+}
+
+// Test: Too many parameters
+fn int badMain4(argc: int, argv: str[], extra: bool) {
+    return 0;
+}
+
+// Test: Valid main without args
+fn int main() {
+    var x: int = 42;
+    return x;  // Should be valid
+}
+
+// Test: Valid main with command line args
+fn int main(argc: int, argv: str[]) {
+    if (argc > 1) {
+        return 1;
+    }
+    return 0;
+}
+
+// Test: Return type mismatch
+fn int mainWithWrongReturn() {
+    return true;  // Error: Cannot return bool from int function
+}
+
+// Test: Missing return
+fn int mainWithoutReturn() {
+    var x: int = 42;
+    // Error: No return statement
+}
+
+// Test: Array access in main
+fn int mainWithArrays(argc: int, argv: str[]) {
+    var idx: int = 0;
+    
+    // Valid array access
+    if (argc > 1) {
+        var arg: str = argv[idx];
+    }
+    
+    // Invalid array access
+    var badIdx: float = 1.5;
+    var bad: str = argv[badIdx];  // Error: Array index must be int
+    
+    return 0;
+}

@@ -6,6 +6,7 @@
 #include <iostream>
 #include <sstream>
 #include "ast_printer.h"
+#include "semantic_visitor.h"
 
 // Forward declaration of helper function
 void printErrorsWithContext(const std::vector<ErrorHandler::Error>& errors, const std::string& sourceCode);
@@ -68,6 +69,19 @@ int main(int argc, char* argv[]) {
             std::cout << "\nAST Structure:\n" << astDump << std::endl;
         }
 
+        SemanticAnalyzer analyzer;
+        bool success = analyzer.analyze(ast.get());
+
+        if (!success)
+        {
+            std::cerr << "\nSemantic Analysis Failed\n";
+            auto semanticErrors = ErrorHandler::instance().getErrors(ErrorLevel::SEMANTIC);
+            std::cerr << "Found " << semanticErrors.size() << " syntax error(s):\n";
+            printErrorsWithContext(semanticErrors, code);
+            return EXIT_FAILURE;
+        }
+        
+
         return EXIT_SUCCESS;
 
     } catch (const std::exception& e) {
@@ -76,7 +90,7 @@ int main(int argc, char* argv[]) {
     }
 }
 
-// Helper function implementation
+
 void printErrorsWithContext(const std::vector<ErrorHandler::Error>& errors, const std::string& sourceCode) {
     std::istringstream sourceStream(sourceCode);
     std::vector<std::string> lines;

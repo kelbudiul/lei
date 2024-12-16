@@ -1,7 +1,6 @@
 #include "parser.h"
 #include <sstream>
 
-
 Parser::Parser(const std::vector<Token>& tokens) 
     : tokens(tokens), current(0) {}
 
@@ -50,44 +49,30 @@ Token Parser::consume(TokenType type, const std::string& message) {
 }
 
 void Parser::synchronize() {
-    debugToken("Synchronize Start");
-    size_t startPos = current;
-    
-    // Always advance at least once
     advance();
     
     while (!isAtEnd()) {
-        // Stop at statement boundaries
-        if (previous().type == SEMICOLON) {
-            debugToken("Synchronize Found Semicolon");
-            return;
-        }
+        // Return on statement boundaries
+        if (previous().type == SEMICOLON) return;
+        if (previous().type == RBRACE) return;
         
-        // Stop at statement keywords
         switch (peek().type) {
             case FN:
             case VAR:
             case IF:
             case WHILE:
             case RETURN:
-            case RBRACE:  // End of block
-                debugToken("Synchronize Found Statement Start");
+            case LBRACE:  // Add LBRACE as a synchronization point
                 return;
+            default:
+                advance();
         }
-        
-        advance();
-    }
-    
-    // If we didn't advance, force advance
-    if (current == startPos && !isAtEnd()) {
-        advance();
-        debugToken("Forced Advance in Synchronize");
     }
 }
 
-// Program parsing
 std::unique_ptr<Program> Parser::parse() {
     std::vector<std::unique_ptr<FunctionDecl>> functions;
+    Token startToken = peek();
     
     while (!isAtEnd()) {
         try {
@@ -107,17 +92,14 @@ std::unique_ptr<Program> Parser::parse() {
         }
     }
     
-    return std::make_unique<Program>(std::move(functions));
+    return std::make_unique<Program>(std::move(functions), startToken);
 }
 
-// Type parsing
 Type Parser::parseType() {
-    // Parse basic type first
     std::string typeName;
     bool isArray = false;
-    int arraySize = 0;
+    int arraySize = -1;
     
-    // Get the base type
     if (match(INT)) typeName = "int";
     else if (match(FLOAT_TYPE)) typeName = "float";
     else if (match(BOOL_TYPE)) typeName = "bool";
@@ -132,34 +114,24 @@ Type Parser::parseType() {
         return Type("error");
     }
     
-    // Check if it's an array type
     if (match(LBRACKET)) {
         isArray = true;
-        
-        // Parse array size if specified
         if (match(NUMBER)) {
             arraySize = std::stoi(previous().value);
-        } else {
-            arraySize = -1; // Dynamic size
         }
-        
         consume(RBRACKET, "Expected ']' after array size");
     }
     
     return Type(typeName, isArray, arraySize);
 }
 
-// Function parsing
 std::unique_ptr<FunctionDecl> Parser::parseFunction() {
-    // Parse return type
+    Token fnToken = previous();
     Type returnType = parseType();
-    
-    // Parse function name
     Token name = consume(IDENTIFIER, "Expected function name");
     
     consume(LPAREN, "Expected '(' after function name");
     
-    // Parse parameters
     std::vector<Parameter> parameters;
     if (!check(RPAREN)) {
         parameters = parseParameters();
@@ -167,10 +139,20 @@ std::unique_ptr<FunctionDecl> Parser::parseFunction() {
     
     consume(RPAREN, "Expected ')' after parameters");
     
-    // Parse function body
+    // Parse the function body as a block
     auto body = parseBlock();
+    if (!body) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SYNTAX,
+            peek().line,
+            peek().column,
+            "Invalid function body"
+        );
+        return nullptr;
+    }
     
-    return std::make_unique<FunctionDecl>(name, returnType, std::move(parameters), std::move(body));
+    return std::make_unique<FunctionDecl>(name, returnType, std::move(parameters),
+                                        std::move(body), fnToken);
 }
 
 std::vector<Parameter> Parser::parseParameters() {
@@ -180,40 +162,48 @@ std::vector<Parameter> Parser::parseParameters() {
         Token name = consume(IDENTIFIER, "Expected parameter name");
         consume(COLON, "Expected ':' after parameter name");
         Type type = parseType();
-        
         parameters.emplace_back(name, type);
     } while (match(COMMA));
     
     return parameters;
 }
 
-// Statement parsing
 std::unique_ptr<BlockStmt> Parser::parseBlock() {
-    consume(LBRACE, "Expected '{' before block");
-    
+    Token braceToken = consume(LBRACE, "Expected '{' before block");
     std::vector<std::unique_ptr<Stmt>> statements;
     
     while (!check(RBRACE) && !isAtEnd()) {
-        statements.push_back(parseStatement());
+        if (auto stmt = parseStatement()) {
+            statements.push_back(std::move(stmt));
+        }
     }
     
     consume(RBRACE, "Expected '}' after block");
-    
-    return std::make_unique<BlockStmt>(std::move(statements));
+    return std::make_unique<BlockStmt>(std::move(statements), braceToken);
 }
 
 std::unique_ptr<Stmt> Parser::parseStatement() {
-    debugToken("Parse Statement Start");
-    
     try {
-        // First check for known statement starts
         if (match(VAR)) return parseVarDecl();
         if (match(IF)) return parseIfStmt();
         if (match(WHILE)) return parseWhileStmt();
         if (match(RETURN)) return parseReturnStmt();
-        if (match(LBRACE)) return parseBlock();
+        if (match(LBRACE)) {
+            // Create a block statement directly from a brace
+            Token braceToken = previous();
+            std::vector<std::unique_ptr<Stmt>> statements;
+            
+            while (!check(RBRACE) && !isAtEnd()) {
+                if (auto stmt = parseStatement()) {
+                    statements.push_back(std::move(stmt));
+                }
+            }
+            
+            consume(RBRACE, "Expected '}' after block");
+            return std::make_unique<BlockStmt>(std::move(statements), braceToken);
+        }
         
-        // If we see a type token, this is likely an error
+        // Handle type declarations that shouldn't appear here
         if (peek().type == INT || peek().type == FLOAT_TYPE || 
             peek().type == BOOL_TYPE || peek().type == STRING_TYPE) {
             ErrorHandler::instance().error(
@@ -226,10 +216,8 @@ std::unique_ptr<Stmt> Parser::parseStatement() {
             return nullptr;
         }
         
-        // Try to parse as expression statement
         return parseExprStmt();
     } catch (const std::exception& e) {
-        debugToken("Statement Parse Error");
         synchronize();
         return nullptr;
     }
@@ -237,22 +225,23 @@ std::unique_ptr<Stmt> Parser::parseStatement() {
 
 
 std::unique_ptr<VarDeclStmt> Parser::parseVarDecl() {
+    Token varToken = previous();
     Token name = consume(IDENTIFIER, "Expected variable name");
     consume(COLON, "Expected ':' after variable name");
     
     Type type = parseType();
-    
     std::unique_ptr<Expr> initializer = nullptr;
+    
     if (match(EQUALS)) {
         initializer = parseExpression();
     }
     
     consume(SEMICOLON, "Expected ';' after variable declaration");
-    
-    return std::make_unique<VarDeclStmt>(name, type, std::move(initializer));
+    return std::make_unique<VarDeclStmt>(name, type, std::move(initializer), varToken);
 }
 
 std::unique_ptr<IfStmt> Parser::parseIfStmt() {
+    Token ifToken = previous();
     auto condition = parseExpression();
     auto thenBranch = parseBlock();
     
@@ -265,22 +254,20 @@ std::unique_ptr<IfStmt> Parser::parseIfStmt() {
         }
     }
     
-    return std::make_unique<IfStmt>(
-        std::move(condition),
-        std::move(thenBranch),
-        std::move(elseBranch)
-    );
+    return std::make_unique<IfStmt>(std::move(condition), std::move(thenBranch),
+                                   std::move(elseBranch), ifToken);
 }
 
 std::unique_ptr<WhileStmt> Parser::parseWhileStmt() {
+    Token whileToken = previous();
     auto condition = parseExpression();
     auto body = parseBlock();
     
-    return std::make_unique<WhileStmt>(std::move(condition), std::move(body));
+    return std::make_unique<WhileStmt>(std::move(condition), std::move(body), whileToken);
 }
 
 std::unique_ptr<ReturnStmt> Parser::parseReturnStmt() {
-    Token keyword = previous();
+    Token returnToken = previous();
     std::unique_ptr<Expr> value = nullptr;
     
     if (!check(SEMICOLON)) {
@@ -288,35 +275,22 @@ std::unique_ptr<ReturnStmt> Parser::parseReturnStmt() {
     }
     
     consume(SEMICOLON, "Expected ';' after return statement");
-    
-    return std::make_unique<ReturnStmt>(keyword, std::move(value));
+    return std::make_unique<ReturnStmt>(returnToken, std::move(value));
 }
 
 std::unique_ptr<ExprStmt> Parser::parseExprStmt() {
-    debugToken("Parse Expression Statement Start");
-    
+    Token startToken = peek();
     auto expr = parseExpression();
+    
     if (!expr) {
-        debugToken("Expression Parse Failed");
         synchronize();
         return nullptr;
     }
     
-    if (!match(SEMICOLON)) {
-        ErrorHandler::instance().error(
-            ErrorLevel::SYNTAX,
-            peek().line,
-            peek().column,
-            "Expected ';' after expression"
-        );
-        synchronize();
-    }
-    
-    debugToken("Parse Expression Statement End");
-    return std::make_unique<ExprStmt>(std::move(expr));
+    consume(SEMICOLON, "Expected ';' after expression");
+    return std::make_unique<ExprStmt>(std::move(expr), startToken);
 }
 
-// Expression parsing
 std::unique_ptr<Expr> Parser::parseExpression() {
     return parseAssignment();
 }
@@ -329,10 +303,8 @@ std::unique_ptr<Expr> Parser::parseAssignment() {
         Token op = previous();
         auto value = parseAssignment();
         
-        // Verify LHS is a valid assignment target
-        if (auto* var = dynamic_cast<VariableExpr*>(expr.get())) {
-            return std::make_unique<AssignExpr>(std::move(expr), op, std::move(value));
-        } else if (auto* arrayAccess = dynamic_cast<ArrayAccessExpr*>(expr.get())) {
+        if (dynamic_cast<VariableExpr*>(expr.get()) ||
+            dynamic_cast<ArrayAccessExpr*>(expr.get())) {
             return std::make_unique<AssignExpr>(std::move(expr), op, std::move(value));
         }
         
@@ -435,10 +407,9 @@ std::unique_ptr<Expr> Parser::parseCall() {
     
     while (true) {
         if (match(LPAREN)) {
-            auto arguments = parseArguments();
-            consume(RPAREN, "Expected ')' after arguments");
-            
             if (auto* var = dynamic_cast<VariableExpr*>(expr.get())) {
+                auto arguments = parseArguments();
+                consume(RPAREN, "Expected ')' after arguments");
                 expr = std::make_unique<CallExpr>(var->name, std::move(arguments));
             } else {
                 ErrorHandler::instance().error(
@@ -447,11 +418,13 @@ std::unique_ptr<Expr> Parser::parseCall() {
                     previous().column,
                     "Expected function name before '('"
                 );
+                break;
             }
         } else if (match(LBRACKET)) {
+            Token bracketToken = previous();
             auto index = parseExpression();
             consume(RBRACKET, "Expected ']' after array index");
-            expr = std::make_unique<ArrayAccessExpr>(std::move(expr), std::move(index));
+            expr = std::make_unique<ArrayAccessExpr>(std::move(expr), std::move(index), bracketToken);
         } else {
             break;
         }
@@ -477,13 +450,11 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
         if (match(IDENTIFIER)) {
             return std::make_unique<VariableExpr>(previous());
         }
-        // Add handling for type names in expressions
         if (match(INT) || match(FLOAT_TYPE) || match(BOOL_TYPE) || match(STRING_TYPE)) {
             return parseTypeExpression();
         }
         if (match(LPAREN)) {
             auto expr = parseExpression();
-            if (!expr) return nullptr;
             consume(RPAREN, "Expected ')' after expression");
             return expr;
         }
@@ -511,17 +482,19 @@ std::unique_ptr<Expr> Parser::parsePrimary() {
 }
 
 std::unique_ptr<ArrayInitExpr> Parser::parseArrayInitializer() {
+    Token braceToken = previous();
     std::vector<std::unique_ptr<Expr>> elements;
     
     if (!check(RBRACE)) {
         do {
-            elements.push_back(parseExpression());
+            if (auto element = parseExpression()) {
+                elements.push_back(std::move(element));
+            }
         } while (match(COMMA));
     }
     
     consume(RBRACE, "Expected '}' after array elements");
-    
-    return std::make_unique<ArrayInitExpr>(std::move(elements));
+    return std::make_unique<ArrayInitExpr>(std::move(elements), braceToken);
 }
 
 std::vector<std::unique_ptr<Expr>> Parser::parseArguments() {
@@ -529,23 +502,136 @@ std::vector<std::unique_ptr<Expr>> Parser::parseArguments() {
     
     if (!check(RPAREN)) {
         do {
-            arguments.push_back(parseExpression());
+            if (auto arg = parseExpression()) {
+                arguments.push_back(std::move(arg));
+            }
         } while (match(COMMA));
     }
     
     return arguments;
+    }
+
+std::unique_ptr<ArrayAllocExpr> Parser::parseArrayAllocation(const Type& elementType) {
+    Token newToken = previous();
+    auto size = parseExpression();
+    return std::make_unique<ArrayAllocExpr>(elementType, std::move(size), newToken);
 }
 
 std::unique_ptr<Expr> Parser::parseTypeExpression() {
     Token typeToken = previous();
     bool isArray = false;
     
-    // Check for array type
     if (match(LBRACKET)) {
         isArray = true;
         consume(RBRACKET, "Expected ']' after array type");
     }
     
-    // Create a TypeExpr node (you'll need to add this to AST)
-    return std::make_unique<TypeExpr>(Type(typeToken.value, isArray));
+    return std::make_unique<TypeExpr>(Type(typeToken.value, isArray), typeToken);
+}
+
+std::unique_ptr<Expr> Parser::createBinaryExpr(std::unique_ptr<Expr> left, 
+                                             const Token& op,
+                                             std::unique_ptr<Expr> right) {
+    return std::make_unique<BinaryExpr>(std::move(left), op, std::move(right));
+}
+
+std::unique_ptr<Expr> Parser::createCallExpr(const Token& name,
+                                           std::vector<std::unique_ptr<Expr>> args) {
+    return std::make_unique<CallExpr>(name, std::move(args));
+}
+
+std::unique_ptr<Expr> Parser::createAssignExpr(std::unique_ptr<Expr> target,
+                                             const Token& op,
+                                             std::unique_ptr<Expr> value) {
+    return std::make_unique<AssignExpr>(std::move(target), op, std::move(value));
+}
+
+// Helper method to report parsing errors with more context
+void Parser::error(const std::string& message) {
+    ErrorHandler::instance().error(
+        ErrorLevel::SYNTAX,
+        peek().line,
+        peek().column,
+        message
+    );
+}
+
+// Helper method to report errors at a specific token
+void Parser::errorAt(const Token& token, const std::string& message) {
+    ErrorHandler::instance().error(
+        ErrorLevel::SYNTAX,
+        token.line,
+        token.column,
+        message
+    );
+}
+
+// Helper method to check for end of expression
+bool Parser::isAtExpressionEnd() const {
+    return check(SEMICOLON) || check(COMMA) || check(RPAREN) || 
+           check(RBRACE) || check(RBRACKET) || isAtEnd();
+}
+
+// Helper method to check if current token could start an expression
+bool Parser::isExpressionStart() const {
+    switch (peek().type) {
+        case IDENTIFIER:
+        case NUMBER:
+        case FLOAT_LITERAL:
+        case STRING_LITERAL:
+        case BOOL_LITERAL:
+        case LPAREN:
+        case LBRACE:
+        case NOT:
+        case MINUS:
+            return true;
+        default:
+            return false;
+    }
+}
+
+// Helper method for validating statement terminators
+void Parser::expectStatementEnd(const std::string& context) {
+    if (!check(SEMICOLON) && !check(RBRACE)) {
+        std::string message = "Expected ';' or '}' after " + context;
+        error(message);
+    }
+}
+
+// Helper method for checking balanced delimiters
+void Parser::checkBalancedDelimiter(TokenType opening, TokenType closing,
+                                  const std::string& context) {
+    int depth = 1;
+    size_t startPos = current;
+    
+    while (!isAtEnd() && depth > 0) {
+        if (peek().type == opening) depth++;
+        if (peek().type == closing) depth--;
+        advance();
+    }
+    
+    if (depth > 0) {
+        current = startPos;
+        std::string message = "Unmatched " + context;
+        error(message);
+    }
+}
+
+// Helper method to parse a sequence of items separated by commas
+template<typename T>
+std::vector<T> Parser::parseCommaSequence(std::function<T()> parseItem,
+                                        TokenType endToken,
+                                        const std::string& endTokenStr) {
+    std::vector<T> items;
+    
+    if (!check(endToken)) {
+        do {
+            if (auto item = parseItem()) {
+                items.push_back(std::move(item));
+            }
+        } while (match(COMMA));
+    }
+    
+    consume(endToken, "Expected '" + endTokenStr + "'");
+    return items;
 }

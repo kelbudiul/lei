@@ -1,46 +1,55 @@
 #ifndef SEMANTIC_VISITOR_H
 #define SEMANTIC_VISITOR_H
 
-#include "symbol_table.h"
 #include "visitor.h"
+#include "symbol_table.h"
 #include "ast.h"
+#include <optional>
 
-class SemanticVisitor : public Visitor {
-private:
-    SymbolTable& symbolTable;
-    std::vector<std::string> errors;
-    
-    // Current function context
-    std::string currentFunction;
-    Type currentReturnType;
-    
-    void error(const std::string& message) {
-        errors.push_back(message);
-    }
-    
-    bool isAssignable(Type from, Type to);
-    bool isComparable(Type left, Type right);
 
+class SemanticAnalyzer : public Visitor {
 public:
-    SemanticVisitor(SymbolTable& table);
-    
-    // Visit methods for all node types
-    void visit(ASTNode* node) override;
-    void visit(FunctionAST* node) override;
-    void visit(BlockAST* node) override;
-    void visit(IfStatementAST* node) override;
-    void visit(WhileStatementAST* node) override;
-    void visit(ReturnAST* node) override;
-    void visit(VariableDeclarationAST* node) override;
-    void visit(BinaryExprAST* node) override;
-    void visit(UnaryExprAST* node) override;
-    void visit(LiteralAST* node) override;
-    void visit(VariableExprAST* node) override;
-    void visit(CallExprAST* node) override;
-    void visit(AssignmentExprAST* node) override;
-    
-    bool hasErrors() const;
-    const std::vector<std::string>& getErrors() const;
+    SemanticAnalyzer() = default;
+
+    // Entry point for analysis
+    bool analyze(Program* program);
+
+    // Visitor interface implementation
+    void visit(Program* node) override;
+    void visit(FunctionDecl* node) override;
+    void visit(NumberExpr* node) override;
+    void visit(StringExpr* node) override;
+    void visit(BoolExpr* node) override;
+    void visit(VariableExpr* node) override;
+    void visit(ArrayAccessExpr* node) override;
+    void visit(BinaryExpr* node) override;
+    void visit(UnaryExpr* node) override;
+    void visit(AssignExpr* node) override;
+    void visit(CallExpr* node) override;
+    void visit(ArrayInitExpr* node) override;
+    void visit(ArrayAllocExpr* node) override;
+    void visit(ExprStmt* node) override;
+    void visit(VarDeclStmt* node) override;
+    void visit(BlockStmt* node) override;
+    void visit(IfStmt* node) override;
+    void visit(WhileStmt* node) override;
+    void visit(ReturnStmt* node) override;
+    void visit(TypeExpr* node) override;
+
+private:
+    SymbolTable symbolTable;
+    Type currentFunctionReturnType{"void"};  // Track return type for validation
+    bool mainFound = false;
+    bool validateMainFunction(FunctionDecl* func);
+    bool isValidMainSignature(FunctionDecl* func);
+    // Type checking helpers
+    std::optional<Type> getExprType(Expr* expr);
+    bool checkBinaryOperatorTypes(const Token& op, const Type& left, const Type& right);
+    bool checkUnaryOperatorTypes(const Token& op, const Type& operand);
+    void ensureArrayType(const Type& type, const Token& context);
+    void ensureNumericType(const Type& type, const Token& context);
+    void ensureBooleanType(const Type& type, const Token& context);
+    bool isConditionExpr(Expr* expr);
 };
 
 #endif // SEMANTIC_VISITOR_H

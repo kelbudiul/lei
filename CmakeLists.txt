@@ -47,11 +47,10 @@ set(SOURCES
     src/main.cpp           # Main program entry
     src/parser.cpp         # Parser implementation
     src/error_handler.cpp
-    #src/semantic_visitor.cpp # Semantic analysis visitor
+    src/semantic_visitor.cpp # Semantic analysis visitor
     src/source_reader.cpp   # Source file reading utilities
-    #src/symbol_table.cpp    # Symbol table management
-    #src/visitor.cpp         # Base visitor pattern implementation
-)
+    src/symbol_table.cpp    # Symbol table management
+    )
 
 # Create the executable target
 # This defines our main compilation target
