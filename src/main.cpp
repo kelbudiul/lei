@@ -1,12 +1,9 @@
-#include "lexer.h"
+#include "compiler.h"
 #include "source_reader.h"
-#include "parser.h"
-#include "error_handler.h"
-#include "llvm/Support/TargetSelect.h"
+#include <llvm/Support/TargetSelect.h>
 #include <iostream>
-#include <sstream>
-#include "ast_printer.h"
-#include "semantic_visitor.h"
+#include <sstream>  // Added for istringstream
+#include "CLI11.hpp"
 
 // Forward declaration of helper function
 void printErrorsWithContext(const std::vector<ErrorHandler::Error>& errors, const std::string& sourceCode);
@@ -16,80 +13,69 @@ int main(int argc, char* argv[]) {
     llvm::InitializeNativeTarget();
     llvm::InitializeNativeTargetAsmPrinter();
     llvm::InitializeNativeTargetAsmParser();
+    
+    CLI::App app{"Lei Compiler"};
 
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <input_file> [output_path]" << std::endl;
-        return EXIT_FAILURE;
-    }
+    std::string inputPath;
+    app.add_option("input", inputPath, "Input source file")
+       ->required()
+       ->check(CLI::ExistingFile);
 
-    std::string path = (argc == 3) ? argv[2] : ".";
+    std::string outputPath = "output.ll";
+    app.add_option("-o,--output", outputPath, "Output path for generated LLVM IR");
 
+    bool execute = false;
+    app.add_flag("-e,--execute", execute, "Directly execute the generated LLVM IR");
+
+    CLI11_PARSE(app, argc, argv);
+    
+    
     try {
         // Read source file
-        std::string filename = argv[1];
-        std::string code = Lei::SourceReader::readSourceFile(filename);
+        std::string sourceCode = Lei::SourceReader::readSourceFile(inputPath);
+        if (sourceCode.empty()) {
+            std::cerr << "Error: Unable to read source file: " << inputPath << std::endl;
+            return EXIT_FAILURE;
+        }
+
+        // Create compiler and compile
+        Compiler compiler;
         
-        if (code.empty()) {
-            std::cerr << "Error: Unable to read source file: " << filename << std::endl;
-            return EXIT_FAILURE;
+        if (execute) {
+            if (!compiler.execute(sourceCode)) {
+                if (compiler.errorHandler.hasErrors(ErrorLevel::CODEGEN)) {
+                    printErrorsWithContext(compiler.errorHandler.getErrors(ErrorLevel::CODEGEN), sourceCode);
+                }
+                return EXIT_FAILURE;
+            }
+        } else {
+            if (!compiler.compile(sourceCode, outputPath)) {
+                if (compiler.errorHandler.hasErrors(ErrorLevel::LEXICAL)) {
+                    std::cerr << "\nLexical Analysis Failed\n";
+                    printErrorsWithContext(compiler.errorHandler.getErrors(ErrorLevel::LEXICAL), sourceCode);
+                }
+                if (compiler.errorHandler.hasErrors(ErrorLevel::SYNTAX)) {
+                    std::cerr << "\nParsing Failed\n";
+                    printErrorsWithContext(compiler.errorHandler.getErrors(ErrorLevel::SYNTAX), sourceCode);
+                }
+                if (compiler.errorHandler.hasErrors(ErrorLevel::SEMANTIC)) {
+                    std::cerr << "\nSemantic Analysis Failed\n";
+                    printErrorsWithContext(compiler.errorHandler.getErrors(ErrorLevel::SEMANTIC), sourceCode);
+                }
+                if (compiler.errorHandler.hasErrors(ErrorLevel::CODEGEN)) {
+                    std::cerr << "\nCode Generation Failed\n";
+                    printErrorsWithContext(compiler.errorHandler.getErrors(ErrorLevel::CODEGEN), sourceCode);
+                }
+                return EXIT_FAILURE;
+            }
+            std::cout << "Compilation successful. Output written to: " << outputPath << std::endl;
         }
-
-        std::cout << "Processing source file: " << filename << std::endl;
-        
-        // Lexical Analysis
-        Lexer lexer(code);
-        auto tokens = lexer.tokenize();
-
-        // Check for lexical errors
-        if (ErrorHandler::instance().hasErrors(ErrorLevel::LEXICAL)) {
-            std::cerr << "\nLexical Analysis Failed\n";
-            auto lexicalErrors = ErrorHandler::instance().getErrors(ErrorLevel::LEXICAL);
-            std::cerr << "Found " << lexicalErrors.size() << " lexical error(s):\n";
-            printErrorsWithContext(lexicalErrors, code);
-            return EXIT_FAILURE;
-        }
-
-        // Parsing
-        Parser parser(tokens);
-        auto ast = parser.parse();
-
-        // Check for syntax errors
-        if (ErrorHandler::instance().hasErrors(ErrorLevel::SYNTAX)) {
-            std::cerr << "\nParsing Failed\n";
-            auto syntaxErrors = ErrorHandler::instance().getErrors(ErrorLevel::SYNTAX);
-            std::cerr << "Found " << syntaxErrors.size() << " syntax error(s):\n";
-            printErrorsWithContext(syntaxErrors, code);
-            return EXIT_FAILURE;
-        }
-
-        // Only print AST if parsing was successful
-        if (ast) {
-            ASTPrinter printer;
-            std::string astDump = printer.print(ast.get());
-            std::cout << "\nAST Structure:\n" << astDump << std::endl;
-        }
-
-        SemanticAnalyzer analyzer;
-        bool success = analyzer.analyze(ast.get());
-
-        if (!success)
-        {
-            std::cerr << "\nSemantic Analysis Failed\n";
-            auto semanticErrors = ErrorHandler::instance().getErrors(ErrorLevel::SEMANTIC);
-            std::cerr << "Found " << semanticErrors.size() << " syntax error(s):\n";
-            printErrorsWithContext(semanticErrors, code);
-            return EXIT_FAILURE;
-        }
-        
-
-        return EXIT_SUCCESS;
 
     } catch (const std::exception& e) {
         std::cerr << "Unhandled exception: " << e.what() << std::endl;
         return EXIT_FAILURE;
     }
 }
-
 
 void printErrorsWithContext(const std::vector<ErrorHandler::Error>& errors, const std::string& sourceCode) {
     std::istringstream sourceStream(sourceCode);

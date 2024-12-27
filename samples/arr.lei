@@ -1,7 +1,0 @@
-fn int main() {
-    var arr: int[] = malloc(5 * sizeof(int));  // Dynamic allocation
-    var arr: int[] = {1, 2, 3};                // Array literal
-    var arr: int[10] = {};                     // Zero-initialized fixed-size array
-    arr[0] = 42;                               // Array access
-    return 0;
-}

@@ -81,3 +81,17 @@ void ReturnStmt::accept(Visitor* visitor) {
 void TypeExpr::accept(Visitor* visitor) {
     visitor->visit(this);
 }
+
+void BlockStmt::addStatement(std::unique_ptr<Stmt> stmt) {
+    if (stmt) {
+        stmt->setParent(this);
+        statements.push_back(std::move(stmt));
+    }
+}
+
+void FunctionDecl::setBody(std::unique_ptr<BlockStmt> b) {
+    if (b) {
+        b->setParent(this);
+        body = std::move(b);
+    }
+}

@@ -9,6 +9,7 @@
 
 class SemanticAnalyzer : public Visitor {
 public:
+    SemanticAnalyzer(SymbolTable& symTable) : symbolTable(symTable) {}
     SemanticAnalyzer() = default;
 
     // Entry point for analysis
@@ -37,7 +38,8 @@ public:
     void visit(TypeExpr* node) override;
 
 private:
-    SymbolTable symbolTable;
+     // Singleton SymbolTable instance
+    SymbolTable& symbolTable = SymbolTable::instance();
     Type currentFunctionReturnType{"void"};  // Track return type for validation
     bool mainFound = false;
     bool validateMainFunction(FunctionDecl* func);
@@ -49,6 +51,7 @@ private:
     void ensureArrayType(const Type& type, const Token& context);
     void ensureNumericType(const Type& type, const Token& context);
     void ensureBooleanType(const Type& type, const Token& context);
+    void declareBuiltinFunctions(); 
     bool isConditionExpr(Expr* expr);
 };
 

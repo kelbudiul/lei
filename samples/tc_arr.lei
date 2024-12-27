@@ -1,0 +1,29 @@
+fn int main() {
+    var size: int = 5 * 4;
+    var arr1: int[] = malloc(size);  // Dynamic allocation
+    var arr2: int[] = {1, 2, 3};                // Array literal
+    var arr3: int[10] = {};                     // Zero-initialized fixed-size array
+    arr1[0] = 42;  
+    
+    //print(arr1[0]);                             // Array access
+
+    // Uninitialized variables with default values
+    var count: int;            // 0
+    var temperature: float;    // 0.0
+    var nameSur: str = "Elbek Tursunov";
+    
+    // Fixed size array
+    var fixed: int[3];         // [0,0,0]
+   
+
+    // Resize array to 10 integers
+    arr1 = realloc(arr1, 10 * sizeof(int));
+
+    // Free memory when done
+    free(arr1);
+
+    
+    // Partial array initialization
+    var grades: float[5] = {90.5, 85.0};  // [90.5, 85.0, 0.0, 0.0, 0.0]
+    return 0;
+}

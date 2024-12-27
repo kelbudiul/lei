@@ -1,9 +1,9 @@
 
-fn int incrementInt(a: int, condition: bool){
-    if condition {
+fn int incrementInt(a: int)
+{
+    
         a += 1;
         return a;
-    }  
 }
 
 fn int incrementIntHundredTimes(a: int) {
@@ -25,12 +25,12 @@ fn int main() {
     
     // Fixed size array
     var fixed: int[3];         // [0,0,0]
-    
+    var size: int = 5 * sizeof(int);
     // Allocate array of 5 integers
-    var arr1: int[] = malloc(5 * sizeof(int));
+    var arr1: int[] = malloc(size);
 
     // Resize array to 10 integers
-    arr1 = realloc(arr, 10 * sizeof(int));
+    arr1 = realloc(arr1, 10 * sizeof(int));
 
     // Free memory when done
     free(arr1);
@@ -53,6 +53,7 @@ fn int main() {
     print(x);    // prints 4.14
     print(i);    // prints 84
     print(b);    // prints true
+    print(temperature);
 
     var hellDolly: str = "Hello, Dolly!";
 
@@ -61,8 +62,8 @@ fn int main() {
 
     i = incrementInt(i);
     print(i);
-
-    i = incrementIntHundredTimes(i);
+    var condition: int = 125;
+    i = incrementIntHundredTimes(i, condition);
     print(i);
     print(arr[4]);
     return 0;

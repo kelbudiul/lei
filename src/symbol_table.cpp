@@ -1,4 +1,41 @@
 #include "symbol_table.h"
+#include <iostream> // For std::cout
+
+void SymbolTable::print() const {
+    std::cout << "Symbol Table Contents:\n";
+
+    int scopeLevel = 0;
+    for (const auto& scope : scopes) {
+        std::cout << "Scope Level " << scopeLevel++ << ":\n";
+
+        for (const auto& [name, symbol] : scope->getSymbols()) {
+            std::cout << "  Name: " << name
+                      << ", Type: " << symbol->type.name
+                      << ", Kind: " << (symbol->kind == Symbol::Kind::VARIABLE ? "Variable" : "Function");
+
+            if (symbol->kind == Symbol::Kind::FUNCTION) {
+                auto* funcSymbol = static_cast<FunctionSymbol*>(symbol.get());
+                std::cout << ", Return Type: " << funcSymbol->type.name
+                          << ", Parameters: ";
+                for (const auto& param : funcSymbol->parameters) {
+                    std::cout << param.name.value << ": " << param.type.name << ", ";
+                }
+                std::cout << "LLVM Function: " << (funcSymbol->llvmFunction ? "Assigned" : "Null");
+            }
+
+            if (symbol->llvmValue) {
+                std::cout << ", LLVM Value: Assigned";
+            } else {
+                std::cout << ", LLVM Value: Null";
+            }
+
+            std::cout << '\n';
+        }
+    }
+    std::cout << "---- End of Symbol Table ----\n";
+}
+
+
 
 bool Scope::declare(const std::string& name, const Type& type) {
     // Check if symbol already exists in current scope
@@ -90,6 +127,11 @@ FunctionSymbol* SymbolTable::resolveFunction(const std::string& name) {
 }
 
 bool SymbolTable::isCompatibleTypes(const Type& left, const Type& right) const {
+    // Special case: 'any' type is compatible with everything
+    if (left.name == "any" || right.name == "any") {
+        return true;
+    }
+
     // If types are exactly the same
     if (left.name == right.name && left.isArray == right.isArray) {
         // For arrays, check sizes if both are fixed-size

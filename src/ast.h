@@ -33,6 +33,9 @@ public:
     virtual void accept(Visitor* visitor) = 0;
     
     Location loc;
+    ASTNode* parent = nullptr;  // Parent pointer
+    
+    void setParent(ASTNode* p) { parent = p; }
     
 protected:
     explicit ASTNode(const Location& location) : loc(location) {}
@@ -198,7 +201,9 @@ public:
     
     BlockStmt(std::vector<std::unique_ptr<Stmt>> stmts, const Token& braceToken)
         : Stmt(Location(braceToken)), statements(std::move(stmts)) {}
+        
     void accept(Visitor* visitor) override;
+    void addStatement(std::unique_ptr<Stmt> stmt);
 };
 
 class IfStmt : public Stmt {
@@ -258,6 +263,8 @@ public:
         : ASTNode(Location(fnToken)), name(n), returnType(rt),
           parameters(std::move(params)), body(std::move(b)) {}
     void accept(Visitor* visitor) override;
+    void setBody(std::unique_ptr<BlockStmt> b);
+
 };
 
 // Program node (top-level)

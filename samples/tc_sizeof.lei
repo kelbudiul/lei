@@ -1,0 +1,26 @@
+fn int main(argc: int, argv: str[]) {
+    print("Hi! What's your name?");
+    var name: str;
+    name = input("Enter your name: ");
+    print(name);
+    
+    var size: int = 4;
+    print(size);
+    
+    var fifty: int = 50;
+    print("Here is the number 50, and soon after the function call its gonna be incremented 100 times");
+    
+    // Use separate temporary variables for the arithmetic
+    var current: int = fifty;
+    var remaining: int = 100;
+    
+    while remaining > 0 {
+        current = current + 1;     // Explicit addition instead of +=
+        remaining = remaining - 1;  // Explicit subtraction instead of -=
+    }
+    
+    fifty = current;  // Store the final result back
+    print(fifty);
+    
+    return 0;
+}

@@ -3,45 +3,81 @@
 
 #include "visitor.h"
 #include "ast.h"
-#include "llvm/IR/IRBuilder.h"
-#include "llvm/IR/LLVMContext.h"
-#include "llvm/IR/Module.h"
+#include "symbol_table.h"
+#include "error_handler.h"
+#include <llvm/IR/LLVMContext.h>
+#include <llvm/IR/IRBuilder.h>
+#include <llvm/IR/Module.h>
+#include <llvm/IR/Function.h>
+#include <llvm/IR/Type.h>
+#include <llvm/IR/Verifier.h>
+#include <llvm/IR/Constants.h>
+#include <llvm/IR/DerivedTypes.h>
+#include <llvm/IR/BasicBlock.h>
+#include <memory>
+#include <string>
+#include <unordered_map>
+#include <iostream>
 
-class CodeGenVisitor : public Visitor {
+class CodegenVisitor : public Visitor {
+public:
+    CodegenVisitor(llvm::LLVMContext& ctx);
+    ~CodegenVisitor() = default;
+
+    // Main entry point for code generation
+    std::unique_ptr<llvm::Module> generateModule(Program* program, const std::string& moduleName);
+
+    // AST Visitor interface implementation
+    void visit(Program* node) override;
+    void visit(FunctionDecl* node) override;
+    void visit(NumberExpr* node) override;
+    void visit(StringExpr* node) override;
+    void visit(BoolExpr* node) override;
+    void visit(VariableExpr* node) override;
+    void visit(ArrayAccessExpr* node) override;
+    void visit(BinaryExpr* node) override;
+    void visit(UnaryExpr* node) override;
+    void visit(AssignExpr* node) override;
+    void visit(CallExpr* node) override;
+    void visit(ArrayInitExpr* node) override;
+    void visit(ArrayAllocExpr* node) override;
+    void visit(ExprStmt* node) override;
+    void visit(VarDeclStmt* node) override;
+    void visit(BlockStmt* node) override;
+    void visit(IfStmt* node) override;
+    void visit(WhileStmt* node) override;
+    void visit(ReturnStmt* node) override;
+    void visit(TypeExpr* node) override;
+
 private:
     llvm::LLVMContext& context;
-    llvm::IRBuilder<>& builder;
-    llvm::Module& module;
-    
-    std::map<std::string, llvm::AllocaInst*> namedValues;
+    std::unique_ptr<llvm::Module> module;
+    std::unique_ptr<llvm::IRBuilder<>> builder;
     llvm::Function* currentFunction;
-    
     llvm::Value* lastValue;
-    
-    llvm::Type* getLLVMType(Type type);
-    llvm::AllocaInst* createEntryBlockAlloca(llvm::Function* function,
-                                            const std::string& name,
-                                            llvm::Type* type);
+    std::unordered_map<std::string, llvm::Value*> stringConstants;
+     SymbolTable& symbolTable = SymbolTable::instance(); // Reference to singleton symbol table
+    ErrorHandler& errorHandler = ErrorHandler::instance();  // Reference to singleton error handler
 
-public:
-    CodeGenVisitor(llvm::LLVMContext& ctx, 
-                   llvm::IRBuilder<>& bldr,
-                   llvm::Module& mod);
-    
-    void visit(FunctionAST* node) override;
-    void visit(BlockAST* node) override;
-    void visit(IfStatementAST* node) override;
-    void visit(WhileStatementAST* node) override;
-    void visit(ReturnAST* node) override;
-    void visit(VariableDeclarationAST* node) override;
-    void visit(BinaryExprAST* node) override;
-    void visit(UnaryExprAST* node) override;
-    void visit(LiteralAST* node) override;
-    void visit(VariableExprAST* node) override;
-    void visit(CallExprAST* node) override;
-    void visit(AssignmentExprAST* node) override;
-    
-    llvm::Value* getLastValue() const { return lastValue; }
+    // Helper methods for type conversion and code generation
+    llvm::Type* getLLVMType(const Type& type);
+    llvm::Value* generateAlloca(llvm::Function* function, const std::string& name, llvm::Type* type);
+    void createBasicBlocksForLoop(llvm::Function* function, const std::string& loopName,
+                                llvm::BasicBlock*& condBlock,
+                                llvm::BasicBlock*& bodyBlock,
+                                llvm::BasicBlock*& endBlock);
+    void declareRuntimeFunctions();
+    llvm::Function* getIntrinsicFunction(const std::string& name);
+    void reportError(const std::string& message, const Location& loc);
+    llvm::Value* convertValue(llvm::Value* value, llvm::Type* targetType);
+
+    // Built-in function generators
+    void generatePrintCall(CallExpr* node);
+    void generateInputCall(CallExpr* node);
+    void generateMallocCall(CallExpr* node);
+    void generateFreeCall(CallExpr* node);
+    void generateReallocCall(CallExpr* node);
+    llvm::Value* generateSizeofCall(CallExpr* node);
 };
 
 #endif // CODEGEN_VISITOR_H

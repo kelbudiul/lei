@@ -38,6 +38,8 @@ set(LIB_SOURCES
     src/semantic_visitor.cpp
     src/source_reader.cpp
     src/symbol_table.cpp
+    src/codegen_visitor.cpp
+    src/compiler.cpp
 )
 
 # Create a library target for the compiler components
@@ -54,8 +56,21 @@ llvm_map_components_to_libnames(llvm_libs
     Support
     Core
     IRReader
-    OrcJIT
     native
+    MCJIT
+    ExecutionEngine
+    RuntimeDyld
+    TransformUtils
+    Analysis
+    ScalarOpts
+    InstCombine
+    Target
+    X86CodeGen
+    X86AsmParser
+    X86Desc
+    MC
+    Object
+    BitWriter
 )
 
 # Link LLVM libraries to our library target

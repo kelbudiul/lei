@@ -41,9 +41,7 @@ bool SemanticAnalyzer::isConditionExpr(Expr* expr) {
 bool SemanticAnalyzer::analyze(Program* program) {
     if (!program) return false;
     
-    // Clear any previous state
-    symbolTable = SymbolTable();
-    
+    declareBuiltinFunctions();
     // Analyze the program
     program->accept(this);
     
@@ -51,7 +49,45 @@ bool SemanticAnalyzer::analyze(Program* program) {
     return !ErrorHandler::instance().hasErrors(ErrorLevel::SEMANTIC);
 }
 
+void SemanticAnalyzer::declareBuiltinFunctions() {
+    // Existing built-in functions
+    std::vector<Parameter> printParams = {
+        Parameter(Token(IDENTIFIER, "value", 0, 0), Type("any"))
+    };
+    symbolTable.declareFunction("print", Type("int"), printParams);
+    
+    std::vector<Parameter> inputParams = {
+        Parameter(Token(IDENTIFIER, "prompt", 0, 0), Type("str"))
+    };
+    symbolTable.declareFunction("input", Type("str"), inputParams);
+    
+    // Add sizeof as a built-in function
+    std::vector<Parameter> sizeofParams = {
+        Parameter(Token(IDENTIFIER, "type", 0, 0), Type("any"))
+    };
+    symbolTable.declareFunction("sizeof", Type("int"), sizeofParams);
+    
+    // Memory management functions with correct signatures
+    std::vector<Parameter> mallocParams = {
+        Parameter(Token(IDENTIFIER, "size", 0, 0), Type("int"))
+    };
+    symbolTable.declareFunction("malloc", Type("any", true), mallocParams);
+    
+    std::vector<Parameter> freeParams = {
+        Parameter(Token(IDENTIFIER, "ptr", 0, 0), Type("any", true))
+    };
+    symbolTable.declareFunction("free", Type("void"), freeParams);
+    
+    std::vector<Parameter> reallocParams = {
+        Parameter(Token(IDENTIFIER, "ptr", 0, 0), Type("any", true)),
+        Parameter(Token(IDENTIFIER, "size", 0, 0), Type("int"))
+    };
+    symbolTable.declareFunction("realloc", Type("any", true), reallocParams);
+}
+
 void SemanticAnalyzer::visit(Program* node) {
+    mainFound = false;  // Reset mainFound flag
+    
     // First pass: declare all functions (enables forward references)
     for (const auto& func : node->functions) {
         if (!symbolTable.declareFunction(func->name.value, func->returnType, func->parameters)) {
@@ -62,6 +98,20 @@ void SemanticAnalyzer::visit(Program* node) {
                 "Duplicate function declaration: " + func->name.value
             );
         }
+        
+        // Check if this is the main function
+        if (func->name.value == "main") {
+            mainFound = validateMainFunction(func.get());
+        }
+    }
+    
+    // Check if main was found after processing all functions
+    if (!mainFound) {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            0, 0,  // Could enhance this with actual file position
+            "No valid main function found. Program must have a main function."
+        );
     }
     
     // Second pass: analyze function bodies
@@ -69,6 +119,8 @@ void SemanticAnalyzer::visit(Program* node) {
         func->accept(this);
     }
 }
+
+
 
 void SemanticAnalyzer::visit(FunctionDecl* node) {
     // Check if this is the main function
@@ -172,6 +224,7 @@ bool SemanticAnalyzer::isValidMainSignature(FunctionDecl* func) {
 void SemanticAnalyzer::visit(VarDeclStmt* node) {
     // Check initializer type if present
     if (node->initializer) {
+        node->initializer->accept(this);
         auto initType = getExprType(node->initializer.get());
         if (initType && !symbolTable.isCompatibleTypes(node->type, *initType)) {
             ErrorHandler::instance().error(
@@ -181,10 +234,11 @@ void SemanticAnalyzer::visit(VarDeclStmt* node) {
                 "Type mismatch in variable declaration. Expected " + 
                 node->type.name + " but got " + initType->name
             );
+            return;
         }
     }
     
-    // Declare the variable
+    // Declare the variable in the current scope
     if (!symbolTable.declare(node->name.value, node->type)) {
         ErrorHandler::instance().error(
             ErrorLevel::SEMANTIC,
@@ -192,6 +246,7 @@ void SemanticAnalyzer::visit(VarDeclStmt* node) {
             node->name.column,
             "Variable already declared in this scope: " + node->name.value
         );
+        return;
     }
 }
 
@@ -284,11 +339,25 @@ bool SemanticAnalyzer::checkBinaryOperatorTypes(const Token& op, const Type& lef
 }
 
 void SemanticAnalyzer::visit(BlockStmt* node) {
-    symbolTable.enterScope();
+    // Don't create a new scope for function bodies as they already have one
+    bool isNewScope = true;
+    if (auto* funcDecl = dynamic_cast<FunctionDecl*>(node->parent)) {
+        if (funcDecl->body.get() == node) {
+            isNewScope = false;
+        }
+    }
+    
+    if (isNewScope) {
+        symbolTable.enterScope();
+    }
+    
     for (const auto& stmt : node->statements) {
         stmt->accept(this);
     }
-    symbolTable.exitScope();
+    
+    if (isNewScope) {
+        symbolTable.exitScope();
+    }
 }
 
 void SemanticAnalyzer::visit(IfStmt* node) {
