@@ -15,8 +15,28 @@ fn int factorial(n: int) {
 
 
 fn int main() {
+    var n: int = atoi(input("Enter N: "));
+    var result: int = factorial(n);
+    print("Result for entered number is: ");
+    print(result);
+    var result2: int = result / 2;
 
-    var factorial15: int = factorial(15);
-    print(factorial15);
+
+    if result2 > 0 {
+        print("Result is bigger than zero");
+    }
+    else {
+        print("Result is not bigger than zero");
+    }
+
+    var counter: int = 10;
+
+    while counter > 0 {
+        print(counter);
+        counter = counter - 1;
+    }
+
+    print("Result divided by two: ");
+    print(result2);
     return 0;
 }

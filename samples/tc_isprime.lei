@@ -1,0 +1,53 @@
+// Function to check if a number is prime without using %
+fn bool isPrime(n: int) {
+    // Handle edge cases
+    if (n <= 1) {
+        return false;
+    }
+    if (n <= 3) {
+        return true; // 2 and 3 are prime
+    }
+
+    // Eliminate multiples of 2 and 3
+    if (isDivisible(n, 2) || isDivisible(n, 3)) {
+        return false;
+    }
+
+    // Check divisors from 5 to sqrt(n)
+    var i: int = 5;
+    while (i * i <= n) {
+        if (isDivisible(n, i) || isDivisible(n, i + 2)) {
+            return false;
+        }
+        i = i + 6;
+    }
+
+    return true; // Number is prime
+}
+
+// Helper function to check divisibility
+fn bool isDivisible(dividend: int, divisor: int) {
+    var remainder: int = dividend;
+    while (remainder >= divisor) {
+        remainder = remainder - divisor;
+    }
+
+    var result: bool = remainder == 0;
+    return result;
+}
+
+// Test the isPrime function
+fn int main() {
+    var num: int = atoi(input("Check N for prime, please enter it:")); // Test with any number
+    var cond: bool = isPrime(num);
+    if (cond) {
+        print(num);
+        print(" is prime");
+    } else {
+        print(num);
+        print(" is not prime");
+    }
+
+
+    return 0;
+}

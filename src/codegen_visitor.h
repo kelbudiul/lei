@@ -58,8 +58,10 @@ private:
     std::unordered_map<std::string, llvm::Value*> stringConstants;
      SymbolTable& symbolTable = SymbolTable::instance(); // Reference to singleton symbol table
     ErrorHandler& errorHandler = ErrorHandler::instance();  // Reference to singleton error handler
+    bool isAssignmentTarget = false;
 
     // Helper methods for type conversion and code generation
+    ASTNode* getCurrentParent(ASTNode* node);
     llvm::Type* getLLVMType(const Type& type);
     llvm::Value* generateAlloca(llvm::Function* function, const std::string& name, llvm::Type* type);
     void createBasicBlocksForLoop(llvm::Function* function, const std::string& loopName,
@@ -68,15 +70,18 @@ private:
                                 llvm::BasicBlock*& endBlock);
     void declareRuntimeFunctions();
     llvm::Function* getIntrinsicFunction(const std::string& name);
+    llvm::Value* handleArrayArgument(llvm::Value* arrayValue);
     void reportError(const std::string& message, const Location& loc);
     llvm::Value* convertValue(llvm::Value* value, llvm::Type* targetType);
-
+    void handleFixedSizeArrayDecl(VarDeclStmt* node, llvm::Type* arrayType);
+    void handleDynamicArrayDecl(VarDeclStmt* node, llvm::Type* pointerType);
     // Built-in function generators
     void generatePrintCall(CallExpr* node);
     void generateInputCall(CallExpr* node);
     void generateMallocCall(CallExpr* node);
     void generateFreeCall(CallExpr* node);
     void generateReallocCall(CallExpr* node);
+    void generateStrlenCall(CallExpr* node);
     llvm::Value* generateSizeofCall(CallExpr* node);
 };
 

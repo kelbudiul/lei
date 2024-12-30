@@ -86,23 +86,37 @@ std::unique_ptr<llvm::Module> CodegenVisitor::generateModule(Program* program, c
 
 
 llvm::Type* CodegenVisitor::getLLVMType(const Type& type) {
+    llvm::Type* baseType = nullptr;
+    
+    // Get the base type first
     if (type.name == "int") {
-        return llvm::Type::getInt32Ty(context);
-    } else if (type.name == "float") {
-        return llvm::Type::getDoubleTy(context);
-    } else if (type.name == "bool") {
-        return llvm::Type::getInt1Ty(context);
-    } else if (type.name == "str") {
-        // Strings are represented as i8* (char*)
-        return llvm::Type::getInt8PtrTy(context);
-    } else if (type.isArray) {
-        llvm::Type* elemType = getLLVMType(Type(type.name));
-        if (!elemType) return nullptr;
-        return llvm::PointerType::get(elemType, 0);
+        baseType = llvm::Type::getInt32Ty(context);
+    } else if (type.name == "void") {
+     baseType = llvm::Type::getVoidTy(context);
     }
-
-    reportError("Unknown type: " + type.name, Location());
-    return nullptr;
+    else if (type.name == "float") {
+        baseType = llvm::Type::getDoubleTy(context);
+    } else if (type.name == "bool") {
+        baseType = llvm::Type::getInt1Ty(context);
+    } else if (type.name == "str") {
+        baseType = llvm::Type::getInt8PtrTy(context);
+    } else {
+        reportError("Unknown type: " + type.name, Location());
+        return nullptr;
+    }
+    
+    // Now handle array types
+    if (type.isArray) {
+        if (type.arraySize >= 0) {
+            // Fixed size array
+            return llvm::ArrayType::get(baseType, type.arraySize);
+        } else {
+            // Dynamic array - pointer to base type
+            return llvm::PointerType::get(baseType, 0);
+        }
+    }
+    
+    return baseType;
 }
 
 llvm::Value* CodegenVisitor::generateAlloca(llvm::Function* function, const std::string& name, llvm::Type* type) {
@@ -442,25 +456,69 @@ void CodegenVisitor::visit(UnaryExpr* node) {
 }
 
 void CodegenVisitor::visit(ArrayAccessExpr* node) {
+    // Generate code for array base
     node->array->accept(this);
-    llvm::Value* array = lastValue;
-    
+    llvm::Value* arrayPtr = lastValue;
+
+    // Generate code for index
     node->index->accept(this);
     llvm::Value* index = lastValue;
-    
-    if (!array || !index) {
+
+    if (!arrayPtr || !index) {
         reportError("Invalid array access", node->loc);
-        lastValue = nullptr;
         return;
     }
-    
-    // Create the GEP instruction for array access
-    std::vector<llvm::Value*> indices = {index};
-    lastValue = builder->CreateGEP(array->getType()->getPointerElementType(), array, indices, "arrayaccess");
-    
-    // Load the value unless this is the target of an assignment
-    lastValue = builder->CreateLoad(lastValue->getType()->getPointerElementType(), lastValue, "arrayvalue");
+
+    // If we got a load instruction, get the pointer operand
+    if (auto* loadInst = llvm::dyn_cast<llvm::LoadInst>(arrayPtr)) {
+        arrayPtr = loadInst->getPointerOperand();
+    }
+
+    llvm::Type* ptrType = arrayPtr->getType();
+    llvm::Type* elementType = nullptr;
+
+    // Handle different array types
+    if (ptrType->isPointerTy()) {
+        if (ptrType->getPointerElementType()->isArrayTy()) {
+            // Fixed-size array
+            elementType = ptrType->getPointerElementType()->getArrayElementType();
+            std::vector<llvm::Value*> indices = {
+                llvm::ConstantInt::get(llvm::Type::getInt32Ty(context), 0),
+                index
+            };
+            
+            lastValue = builder->CreateInBoundsGEP(
+                ptrType->getPointerElementType(),
+                arrayPtr,
+                indices,
+                "array.element"
+            );
+        }
+        else if (ptrType->getPointerElementType()->isPointerTy()) {
+            // Dynamic array (pointer to pointer)
+            elementType = ptrType->getPointerElementType()->getPointerElementType();
+            llvm::Value* ptr = builder->CreateLoad(ptrType->getPointerElementType(), arrayPtr);
+            lastValue = builder->CreateInBoundsGEP(elementType, ptr, index, "array.element");
+        }
+        else {
+            // Dynamic array (direct pointer)
+            elementType = ptrType->getPointerElementType();
+            lastValue = builder->CreateInBoundsGEP(elementType, arrayPtr, index, "array.element");
+        }
+    }
+    else {
+        reportError("Invalid array type", node->loc);
+        return;
+    }
+
+    // If this is not an assignment target, load the value
+    if (!isAssignmentTarget && lastValue) {
+        lastValue = builder->CreateLoad(lastValue->getType()->getPointerElementType(), 
+                                     lastValue, 
+                                     "array.value");
+    }
 }
+
 
 void CodegenVisitor::declareRuntimeFunctions() {
     // Declare printf
@@ -519,7 +577,56 @@ void CodegenVisitor::declareRuntimeFunctions() {
         false
     );
     module->getOrInsertFunction("realloc", reallocTy);
+
+
+    llvm::FunctionType* strchrTy = llvm::FunctionType::get(
+        llvm::Type::getInt8PtrTy(context),
+        {llvm::Type::getInt8PtrTy(context), llvm::Type::getInt8Ty(context)},
+        false
+    );
+    module->getOrInsertFunction("strchr", strchrTy);
+
+    // Declare atoi
+    llvm::FunctionType* atoiType = llvm::FunctionType::get(
+        llvm::Type::getInt32Ty(context), {llvm::Type::getInt8PtrTy(context)}, false);
+    module->getOrInsertFunction("atoi", atoiType);
+
+    // Declare atof
+    llvm::FunctionType* atofType = llvm::FunctionType::get(
+        llvm::Type::getDoubleTy(context), {llvm::Type::getInt8PtrTy(context)}, false);
+    module->getOrInsertFunction("atof", atofType);
+
+    // Declare itoa (requires a buffer for simplicity)
+    llvm::FunctionType* itoaType = llvm::FunctionType::get(
+        llvm::Type::getInt8PtrTy(context),
+        {llvm::Type::getInt32Ty(context), llvm::Type::getInt8PtrTy(context), llvm::Type::getInt32Ty(context)},
+        false);
+    module->getOrInsertFunction("itoa", itoaType);
+
+    // Declare ftoa (requires a buffer for simplicity)
+    llvm::FunctionType* ftoaType = llvm::FunctionType::get(
+        llvm::Type::getInt8PtrTy(context),
+        {llvm::Type::getDoubleTy(context), llvm::Type::getInt8PtrTy(context), llvm::Type::getInt32Ty(context)},
+        false);
+    module->getOrInsertFunction("ftoa", ftoaType);
 }
+
+llvm::Value* CodegenVisitor::handleArrayArgument(llvm::Value* arrayValue) {
+    llvm::Type* arrayType = arrayValue->getType();
+    if (arrayType->isPointerTy() && arrayType->getPointerElementType()->isArrayTy()) {
+        // Extract the pointer to the first element
+        llvm::Value* firstElementPtr = builder->CreateInBoundsGEP(
+            arrayType->getPointerElementType(), // Array type
+            arrayValue,                        // Base pointer
+            {llvm::ConstantInt::get(context, llvm::APInt(32, 0)), // Array index 0
+             llvm::ConstantInt::get(context, llvm::APInt(32, 0))}, // Element index 0
+            "arrayptr"
+        );
+        return firstElementPtr;
+    }
+    return arrayValue; // Not an array, return as-is
+}
+
 
 void CodegenVisitor::visit(CallExpr* node) {
     if (!node) {
@@ -527,8 +634,13 @@ void CodegenVisitor::visit(CallExpr* node) {
         return;
     }
 
+    llvm::Function* func = nullptr;
+
     // Handle built-in functions
-    if (node->name.value == "print") {
+    if (node->name.value == "atoi" || node->name.value == "atof" ||
+        node->name.value == "itoa" || node->name.value == "ftoa") {
+        func = module->getFunction(node->name.value);
+    } else if (node->name.value == "print") {
         generatePrintCall(node);
         return;
     } else if (node->name.value == "input") {
@@ -546,6 +658,28 @@ void CodegenVisitor::visit(CallExpr* node) {
     } else if (node->name.value == "sizeof") {
         generateSizeofCall(node);
         return;
+    } else if (node->name.value == "strlen") {
+    generateStrlenCall(node);
+    return;
+    }
+
+    // Handle built-in conversion functions (atoi, atof, etc.)
+    if (func) {
+        if (node->arguments.size() != 1) {
+            reportError("Function " + node->name.value + " expects one argument", node->loc);
+            return;
+        }
+
+        // Process single argument
+        node->arguments[0]->accept(this);
+        if (!lastValue) {
+            reportError("Invalid argument for function " + node->name.value, node->loc);
+            return;
+        }
+
+        // Generate call with single argument
+        lastValue = builder->CreateCall(func, {lastValue}, "calltmp");
+        return;
     }
 
     // Handle regular function calls
@@ -555,20 +689,50 @@ void CodegenVisitor::visit(CallExpr* node) {
         return;
     }
 
-    // Evaluate arguments
+    // Process arguments
     std::vector<llvm::Value*> args;
     for (const auto& arg : node->arguments) {
-        if (!arg) continue;
-        arg->accept(this);
-        if (!lastValue) {
+        arg->accept(this);  // Generate code for the argument
+        llvm::Value* value = lastValue;
+
+        if (!value) {
             reportError("Invalid function argument", arg->loc);
             return;
         }
-        args.push_back(lastValue);
+
+        // Check and handle array argument
+        value = handleArrayArgument(value);
+        args.push_back(value);
+        
     }
 
-    // Create the call instruction
+    // Generate the function call
     lastValue = builder->CreateCall(funcSymbol->llvmFunction, args);
+}
+
+void CodegenVisitor::generateStrlenCall(CallExpr* node) {
+    if (node->arguments.size() != 1) {
+        reportError("strlen() requires exactly one string argument", node->loc);
+        lastValue = nullptr;
+        return;
+    }
+
+    // Generate code for the argument
+    node->arguments[0]->accept(this);
+    llvm::Value* str = lastValue;
+    if (!str) return;
+
+    // Call strlen
+    llvm::Function* strlenFunc = module->getFunction("strlen");
+    if (!strlenFunc) {
+        reportError("strlen function not found", node->loc);
+        lastValue = nullptr;
+        return;
+    }
+
+    // Create the call and truncate the result to 32 bits (since we use int32 for our int type)
+    llvm::Value* result = builder->CreateCall(strlenFunc, {str});
+    lastValue = builder->CreateTrunc(result, llvm::Type::getInt32Ty(context), "strlen.result");
 }
 
 void CodegenVisitor::generatePrintCall(CallExpr* node) {
@@ -584,39 +748,57 @@ void CodegenVisitor::generatePrintCall(CallExpr* node) {
         return;
     }
 
+    // Generate code for the argument
     node->arguments[0]->accept(this);
     llvm::Value* arg = lastValue;
     if (!arg) return;
 
+    // Handle loaded values
+    if (auto* loadInst = llvm::dyn_cast<llvm::LoadInst>(arg)) {
+        arg = loadInst;
+    }
+
     std::vector<llvm::Value*> printfArgs;
     llvm::Value* formatStr = nullptr;
 
+    // Handle different types
     if (arg->getType()->isIntegerTy(32)) {
         formatStr = builder->CreateGlobalStringPtr("%d\n");
-    } else if (arg->getType()->isDoubleTy()) {
+        printfArgs = {formatStr, arg};
+    } 
+    else if (arg->getType()->isDoubleTy()) {
         formatStr = builder->CreateGlobalStringPtr("%f\n");
-    } else if (arg->getType()->isPointerTy() && 
-               arg->getType()->getPointerElementType()->isIntegerTy(8)) {
-        // String type (i8*)
+        printfArgs = {formatStr, arg};
+    }
+    else if (arg->getType()->isPointerTy() && 
+             arg->getType()->getPointerElementType()->isIntegerTy(8)) {
         formatStr = builder->CreateGlobalStringPtr("%s\n");
-    } else if (arg->getType()->isIntegerTy(1)) {  // boolean
-        // For booleans, we'll use select to choose between "true\n" and "false\n"
-        llvm::Value* trueStr = builder->CreateGlobalStringPtr("true\n");
-        llvm::Value* falseStr = builder->CreateGlobalStringPtr("false\n");
-        formatStr = builder->CreateSelect(arg, trueStr, falseStr);
-        
-        // For boolean, we directly use the string without format
-        printfArgs.push_back(formatStr);
-        lastValue = builder->CreateCall(printfFunc, printfArgs);
-        return;
-    } else {
+        printfArgs = {formatStr, arg};
+    }
+    else if (arg->getType()->isIntegerTy(1)) {
+        formatStr = builder->CreateGlobalStringPtr("%s\n");
+        llvm::Value* trueStr = builder->CreateGlobalStringPtr("true");
+        llvm::Value* falseStr = builder->CreateGlobalStringPtr("false");
+        llvm::Value* boolStr = builder->CreateSelect(arg, trueStr, falseStr);
+        printfArgs = {formatStr, boolStr};
+    }
+    else if (auto* ptrTy = llvm::dyn_cast<llvm::PointerType>(arg->getType())) {
+        // If it's a pointer to an integer, load it first
+        if (ptrTy->getElementType()->isIntegerTy(32)) {
+            arg = builder->CreateLoad(ptrTy->getElementType(), arg);
+            formatStr = builder->CreateGlobalStringPtr("%d\n");
+            printfArgs = {formatStr, arg};
+        }
+        else {
+            reportError("Unsupported pointer type for print()", node->loc);
+            return;
+        }
+    }
+    else {
         reportError("Unsupported type for print()", node->loc);
-        lastValue = nullptr;
         return;
     }
 
-    printfArgs.push_back(formatStr);
-    printfArgs.push_back(arg);
     lastValue = builder->CreateCall(printfFunc, printfArgs);
 }
 
@@ -628,6 +810,7 @@ void CodegenVisitor::generateInputCall(CallExpr* node) {
     llvm::Function* fgetsFunc = module->getFunction("fgets");
     llvm::Function* strlenFunc = module->getFunction("strlen");
     llvm::Value* stdinValue = module->getNamedGlobal("stdin");
+    
 
     // Create buffer type and allocation
     llvm::ArrayType* bufferType = llvm::ArrayType::get(llvm::Type::getInt8Ty(context), 1024);
@@ -722,16 +905,26 @@ llvm::Value* CodegenVisitor::generateSizeofCall(CallExpr* node) {
         return nullptr;
     }
 
-    Expr* arg = node->arguments[0].get();
-    if (auto* typeExpr = dynamic_cast<TypeExpr*>(arg)) {
-        typeExpr->accept(this);
-        return lastValue;  // `lastValue` now contains the size
+    // Get the type from the argument
+    auto* typeExpr = dynamic_cast<TypeExpr*>(node->arguments[0].get());
+    if (!typeExpr) {
+        reportError("sizeof() argument must be a type", node->loc);
+        return nullptr;
     }
 
-    reportError("sizeof() argument must be a type expression", node->loc);
-    return nullptr;
-}
+    llvm::Type* type = getLLVMType(typeExpr->type);
+    if (!type) {
+        reportError("Invalid type for sizeof()", node->loc);
+        return nullptr;
+    }
 
+    // Get size using DataLayout
+    const llvm::DataLayout& dataLayout = module->getDataLayout();
+    uint64_t size = dataLayout.getTypeAllocSize(type);
+
+    // Return size as i32
+    return llvm::ConstantInt::get(context, llvm::APInt(32, size));
+}
 
 
 void CodegenVisitor::generateMallocCall(CallExpr* node) {
@@ -741,11 +934,46 @@ void CodegenVisitor::generateMallocCall(CallExpr* node) {
         return;
     }
 
+    // Generate code for size argument
     node->arguments[0]->accept(this);
     if (!lastValue) return;
 
+    // Convert size to i64 if needed
+    llvm::Value* size = builder->CreateSExtOrTrunc(lastValue, llvm::Type::getInt64Ty(context));
+
+    // Call malloc
     llvm::Function* mallocFunc = module->getFunction("malloc");
-    lastValue = builder->CreateCall(mallocFunc, {lastValue});
+    if (!mallocFunc) {
+        reportError("malloc function not found", node->loc);
+        return;
+    }
+
+    // Call malloc to get raw pointer
+    llvm::Value* rawPtr = builder->CreateCall(mallocFunc, {size}, "mallocraw");
+    
+    // Determine the target type for the malloc result
+    llvm::Type* targetType = nullptr;
+    if (auto* parent = dynamic_cast<VarDeclStmt*>(getCurrentParent(node))) {
+        if (parent->type.isArray) {
+            targetType = getLLVMType(Type(parent->type.name, false));  // Get base type
+            if (targetType) {
+                targetType = targetType->getPointerTo();  // Make it a pointer type
+            }
+        }
+    }
+
+    // If we couldn't determine target type, default to i32*
+    if (!targetType) {
+        targetType = llvm::Type::getInt32PtrTy(context);
+    }
+
+    // Cast the raw pointer to the appropriate type
+    lastValue = builder->CreateBitCast(rawPtr, targetType, "array_ptr");
+}
+
+// Helper function to get parent node
+ASTNode* CodegenVisitor::getCurrentParent(ASTNode* node) {
+    return node ? node->parent : nullptr;
 }
 
 void CodegenVisitor::generateFreeCall(CallExpr* node) {
@@ -756,138 +984,285 @@ void CodegenVisitor::generateFreeCall(CallExpr* node) {
     }
 
     node->arguments[0]->accept(this);
-    if (!lastValue) return;
+    llvm::Value* ptr = lastValue;
+    if (!ptr) return;
 
+    // Cast the pointer to i8* before calling free
+    llvm::Value* i8Ptr = builder->CreateBitCast(ptr, llvm::Type::getInt8PtrTy(context), "free.arg");
     llvm::Function* freeFunc = module->getFunction("free");
-    lastValue = builder->CreateCall(freeFunc, {lastValue});
+    lastValue = builder->CreateCall(freeFunc, {i8Ptr});
 }
 
 void CodegenVisitor::generateReallocCall(CallExpr* node) {
     if (node->arguments.size() != 2) {
-        reportError("realloc() requires pointer and size arguments", node->loc);
+        reportError("realloc() requires exactly two arguments: pointer and size", node->loc);
         lastValue = nullptr;
         return;
     }
 
+    // Generate code for the pointer argument
     node->arguments[0]->accept(this);
     llvm::Value* ptr = lastValue;
-    if (!ptr) return;
+    if (!ptr) {
+        reportError("Invalid pointer argument for realloc", node->loc);
+        return;
+    }
 
+    // Generate code for the size argument
     node->arguments[1]->accept(this);
     llvm::Value* size = lastValue;
-    if (!size) return;
+    if (!size) {
+        reportError("Invalid size argument for realloc", node->loc);
+        return;
+    }
 
+    // Ensure the size is of type i64
+    llvm::Value* sizeI64 = builder->CreateZExtOrTrunc(size, llvm::Type::getInt64Ty(context), "size.i64");
+
+    // Cast the pointer to i8* as realloc expects this type
+    llvm::Value* castedPtr = builder->CreateBitCast(ptr, llvm::Type::getInt8PtrTy(context), "realloc.ptr");
+
+    // Call realloc
     llvm::Function* reallocFunc = module->getFunction("realloc");
-    lastValue = builder->CreateCall(reallocFunc, {ptr, size});
+    if (!reallocFunc) {
+        reportError("realloc function not found", node->loc);
+        lastValue = nullptr;
+        return;
+    }
+
+    llvm::Value* rawPtr = builder->CreateCall(reallocFunc, {castedPtr, sizeI64}, "realloc.raw");
+
+    // Cast the result back to the appropriate pointer type
+    llvm::Type* targetType = ptr->getType();
+    lastValue = builder->CreateBitCast(rawPtr, targetType, "realloc.result");
 }
+
+
 void CodegenVisitor::visit(AssignExpr* node) {
+    if (!node) return;
+
+    // Handle compound assignments (e.g., +=, -=, *=, /=)
+    if (node->op.type != EQUALS) {
+        // Process the target as an lvalue
+        isAssignmentTarget = true;
+        node->target->accept(this);
+        isAssignmentTarget = false;
+
+        llvm::Value* targetPtr = lastValue; // Pointer to the target
+        if (!targetPtr) {
+            reportError("Invalid target for compound assignment", node->loc);
+            return;
+        }
+
+        // Load the current value of the target
+        llvm::Value* currentValue = builder->CreateLoad(
+            targetPtr->getType()->getPointerElementType(),
+            targetPtr,
+            "compound.current"
+        );
+
+        // Generate code for the right-hand side expression
+        node->value->accept(this);
+        llvm::Value* rhsValue = lastValue;
+        if (!rhsValue) {
+            reportError("Invalid value in compound assignment", node->loc);
+            return;
+        }
+
+        // Perform the compound operation
+        llvm::Value* result = nullptr;
+        bool isFloat = currentValue->getType()->isDoubleTy();
+
+        switch (node->op.type) {
+            case PLUS_EQUALS:
+                result = isFloat ?
+                    builder->CreateFAdd(currentValue, rhsValue, "addtmp") :
+                    builder->CreateAdd(currentValue, rhsValue, "addtmp");
+                break;
+            case MINUS_EQUALS:
+                result = isFloat ?
+                    builder->CreateFSub(currentValue, rhsValue, "subtmp") :
+                    builder->CreateSub(currentValue, rhsValue, "subtmp");
+                break;
+            case STAR_EQUALS:
+                result = isFloat ?
+                    builder->CreateFMul(currentValue, rhsValue, "multmp") :
+                    builder->CreateMul(currentValue, rhsValue, "multmp");
+                break;
+            case SLASH_EQUALS:
+                result = isFloat ?
+                    builder->CreateFDiv(currentValue, rhsValue, "divtmp") :
+                    builder->CreateSDiv(currentValue, rhsValue, "divtmp");
+                break;
+            default:
+                reportError("Unknown compound assignment operator", node->loc);
+                return;
+        }
+
+        // Store the result back into the target
+        builder->CreateStore(result, targetPtr);
+        lastValue = result;
+        return;
+    }
+
+    // Handle regular assignment (=)
     node->value->accept(this);
     llvm::Value* value = lastValue;
-    
-    // Handle the target
+    if (!value) {
+        reportError("Invalid value in assignment", node->loc);
+        return;
+    }
+
     if (auto* var = dynamic_cast<VariableExpr*>(node->target.get())) {
+        // Handle variable assignment
         Symbol* symbol = symbolTable.resolve(var->name.value);
         if (!symbol || !symbol->llvmValue) {
             reportError("Undefined variable: " + var->name.value, node->loc);
-            lastValue = nullptr;
             return;
         }
-        value = convertValue(value, getLLVMType(symbol->type));
+
+        // Convert value type if needed
+        llvm::Type* targetType = getLLVMType(symbol->type);
+        if (value->getType() != targetType) {
+            value = convertValue(value, targetType);
+            if (!value) {
+                reportError("Invalid type conversion in assignment", node->loc);
+                return;
+            }
+        }
+
         builder->CreateStore(value, symbol->llvmValue);
         lastValue = value;
-    }
-    else if (auto* arrayAccess = dynamic_cast<ArrayAccessExpr*>(node->target.get())) {
-        arrayAccess->array->accept(this);
-        llvm::Value* array = lastValue;
-        arrayAccess->index->accept(this);
-        llvm::Value* index = lastValue;
-        
-        if (!array || !index) {
+    } else if (auto* arrayAccess = dynamic_cast<ArrayAccessExpr*>(node->target.get())) {
+        // Handle array element assignment
+        isAssignmentTarget = true;
+        arrayAccess->accept(this);
+        isAssignmentTarget = false;
+
+        llvm::Value* targetPtr = lastValue; // Pointer to array element
+        if (!targetPtr) {
             reportError("Invalid array access in assignment", node->loc);
-            lastValue = nullptr;
             return;
         }
-        
-        std::vector<llvm::Value*> indices = {index};
-        llvm::Value* elementPtr = builder->CreateGEP(array->getType()->getPointerElementType(), 
-                                                   array, indices, "arrayelem");
-        value = convertValue(value, elementPtr->getType()->getPointerElementType());
-        builder->CreateStore(value, elementPtr);
+
+        // Convert value type to match array element type
+        llvm::Type* elementType = targetPtr->getType()->getPointerElementType();
+        if (value->getType() != elementType) {
+            value = convertValue(value, elementType);
+            if (!value) {
+                reportError("Invalid type conversion in array assignment", node->loc);
+                return;
+            }
+        }
+
+        builder->CreateStore(value, targetPtr);
         lastValue = value;
-    }
-    else {
+    } else {
         reportError("Invalid assignment target", node->loc);
         lastValue = nullptr;
     }
 }
 
+
 void CodegenVisitor::visit(ArrayInitExpr* node) {
-    // Get size of the array
-    size_t size = node->elements.size();
-    
-    // Create array type based on first element if available
-    llvm::Type* elementType = nullptr;
-    if (!node->elements.empty()) {
-        node->elements[0]->accept(this);
-        elementType = lastValue->getType();
-    } else {
-        elementType = llvm::Type::getInt32Ty(context); // Default to int
+    if (node->elements.empty()) {
+        lastValue = nullptr;
+        return;
     }
+
+    // Get type from first element
+    node->elements[0]->accept(this);
+    if (!lastValue) {
+        reportError("Invalid first element in array initializer", node->loc);
+        return;
+    }
+    llvm::Type* elementType = lastValue->getType();
+
+    // Create array type
+    llvm::ArrayType* arrayType = llvm::ArrayType::get(elementType, 
+                                                     node->elements.size());
     
-    // Allocate array
-    llvm::ArrayType* arrayType = llvm::ArrayType::get(elementType, size);
-    llvm::Value* array = builder->CreateAlloca(arrayType, nullptr, "array");
-    
-    // Initialize elements
+    // Create allocation for the array
+    llvm::Value* arrayAlloca = builder->CreateAlloca(arrayType, 
+                                                    nullptr, 
+                                                    "arrayinit");
+
+    // Store each element
     for (size_t i = 0; i < node->elements.size(); i++) {
         node->elements[i]->accept(this);
         if (!lastValue) continue;
-        
+
+        // Convert element to correct type if needed
+        lastValue = convertValue(lastValue, elementType);
+
+        // Create GEP for element storage
         std::vector<llvm::Value*> indices = {
             llvm::ConstantInt::get(context, llvm::APInt(32, 0)),
             llvm::ConstantInt::get(context, llvm::APInt(32, i))
         };
-        llvm::Value* elementPtr = builder->CreateGEP(arrayType, array, indices);
+        llvm::Value* elementPtr = builder->CreateInBoundsGEP(arrayType, 
+                                                           arrayAlloca, 
+                                                           indices, 
+                                                           "arrayelem");
+        
+        // Store the element
         builder->CreateStore(lastValue, elementPtr);
     }
-    
-    lastValue = array;
+
+    lastValue = arrayAlloca;
 }
 
 void CodegenVisitor::visit(ArrayAllocExpr* node) {
+    // Generate code for size expression
     node->size->accept(this);
     llvm::Value* size = lastValue;
     
     if (!size) {
-        reportError("Invalid array size", node->loc);
-        lastValue = nullptr;
+        reportError("Invalid array size expression", node->loc);
         return;
     }
-    
+
+    // Ensure size is i32
+    if (!size->getType()->isIntegerTy(32)) {
+        size = builder->CreateIntCast(size, 
+                                    llvm::Type::getInt32Ty(context), 
+                                    true, 
+                                    "sizecast");
+    }
+
+    // Get element type
     llvm::Type* elementType = getLLVMType(node->elementType);
     if (!elementType) {
         reportError("Invalid array element type", node->loc);
-        lastValue = nullptr;
         return;
     }
-    
-    // Get DataLayout from the module and calculate element size
+
+    // Calculate element size using DataLayout
     const llvm::DataLayout& dataLayout = module->getDataLayout();
-    llvm::Value* elementSize = llvm::ConstantInt::get(context, 
-        llvm::APInt(64, dataLayout.getTypeAllocSize(elementType)));
-    
-    // Calculate total size in bytes
+    uint64_t elemSize = dataLayout.getTypeAllocSize(elementType);
+    llvm::Value* elemSizeVal = llvm::ConstantInt::get(context, 
+                                                     llvm::APInt(64, elemSize));
+
+    // Calculate total size (size * sizeof(element))
     llvm::Value* totalSize = builder->CreateMul(
         builder->CreateZExt(size, llvm::Type::getInt64Ty(context)),
-        elementSize
+        elemSizeVal,
+        "totalsize"
     );
-    
+
     // Call malloc
     llvm::Function* mallocFunc = module->getFunction("malloc");
-    llvm::Value* memory = builder->CreateCall(mallocFunc, {totalSize});
-    
-    // Bitcast to correct pointer type
-    lastValue = builder->CreateBitCast(memory, elementType->getPointerTo());
+    if (!mallocFunc) {
+        reportError("malloc function not found", node->loc);
+        return;
+    }
+
+    llvm::Value* memory = builder->CreateCall(mallocFunc, {totalSize}, "mallocraw");
+
+    // Bitcast malloc result to array element type pointer
+    lastValue = builder->CreateBitCast(memory, 
+                                     elementType->getPointerTo(), 
+                                     "arrayptr");
 }
 
 void CodegenVisitor::visit(TypeExpr* node) {
@@ -903,74 +1278,147 @@ void CodegenVisitor::visit(ExprStmt* node) {
 
 
 void CodegenVisitor::visit(VarDeclStmt* node) {
-    llvm::Type* type = getLLVMType(node->type);
-    if (!type) {
-        reportError("Invalid variable type", node->loc);
+    llvm::Type* varType = getLLVMType(node->type);
+    if (!varType) {
+        reportError("Invalid type for variable: " + node->name.value, node->loc);
         return;
     }
 
-    if (!currentFunction) {
+    // Create the alloca instruction at the beginning of the function
+    llvm::Value* alloca = nullptr;
+    if (currentFunction) {
+        alloca = generateAlloca(currentFunction, node->name.value, varType);
+    } else {
         reportError("Variable declaration outside function", node->loc);
         return;
     }
 
-    // Create alloca instruction at the beginning of the function
-    llvm::Value* alloca = generateAlloca(currentFunction, node->name.value, type);
-    if (!alloca) {
-        reportError("Failed to allocate storage for variable: " + node->name.value, node->loc);
-        return;
-    }
-
-    // Store the alloca in the symbol table
-    auto symbol = symbolTable.resolve(node->name.value);
-    if (!symbol) {
-        if (!symbolTable.declare(node->name.value, node->type)) {
-            reportError("Failed to declare symbol: " + node->name.value, node->loc);
-            return;
-        }
-        symbol = symbolTable.resolve(node->name.value);
-    }
-
-    symbol->llvmValue = alloca;
-    symbol->isAlloca = true;
-
-    // Handle initializer if present
+    // Handle initialization
     if (node->initializer) {
-        node->initializer->accept(this);
-        if (!lastValue) {
-            reportError("Invalid initializer for variable: " + node->name.value, node->loc);
-            return;
-        }
+        // Handle array initialization
+        if (node->type.isArray) {
+            if (auto* arrayInit = dynamic_cast<ArrayInitExpr*>(node->initializer.get())) {
+                // Fixed-size array initialization
+                if (node->type.arraySize >= 0) {
+                    size_t numElements = std::min(
+                        arrayInit->elements.size(),
+                        static_cast<size_t>(node->type.arraySize)
+                    );
 
-        // Special handling for string initialization
-        if (node->type.name == "str") {
-            if (lastValue->getType() != type) {
-                lastValue = builder->CreateBitCast(lastValue, type);
+                    // Initialize declared elements
+                    for (size_t i = 0; i < numElements; i++) {
+                        // Create indices for element access
+                        std::vector<llvm::Value*> indices = {
+                            llvm::ConstantInt::get(context, llvm::APInt(32, 0)),
+                            llvm::ConstantInt::get(context, llvm::APInt(32, i))
+                        };
+
+                        // Get pointer to array element
+                        llvm::Value* elementPtr = builder->CreateInBoundsGEP(
+                            varType,
+                            alloca,
+                            indices,
+                            "array.element"
+                        );
+
+                        // Generate code for the initializer value
+                        arrayInit->elements[i]->accept(this);
+                        if (!lastValue) continue;
+
+                        // Convert type if needed
+                        llvm::Type* elementType = elementPtr->getType()->getPointerElementType();
+                        lastValue = convertValue(lastValue, elementType);
+                        
+                        // Store the value
+                        builder->CreateStore(lastValue, elementPtr);
+                    }
+
+                    // Zero-initialize remaining elements
+                    if (numElements < static_cast<size_t>(node->type.arraySize)) {
+                        llvm::Type* elementType = varType->getArrayElementType();
+                        llvm::Value* zero = llvm::Constant::getNullValue(elementType);
+                        
+                        for (size_t i = numElements; i < static_cast<size_t>(node->type.arraySize); i++) {
+                            std::vector<llvm::Value*> indices = {
+                                llvm::ConstantInt::get(context, llvm::APInt(32, 0)),
+                                llvm::ConstantInt::get(context, llvm::APInt(32, i))
+                            };
+                            
+                            llvm::Value* elementPtr = builder->CreateInBoundsGEP(
+                                varType,
+                                alloca,
+                                indices,
+                                "array.element"
+                            );
+                            
+                            builder->CreateStore(zero, elementPtr);
+                        }
+                    }
+                }
+                // Dynamic array initialization
+                else {
+                    // Handle malloc or other dynamic initialization
+                    node->initializer->accept(this);
+                    if (lastValue) {
+                        builder->CreateStore(lastValue, alloca);
+                    }
+                }
             }
-        } else {
-            lastValue = convertValue(lastValue, type);
+            // Handle malloc call for dynamic arrays
+            else if (auto* callExpr = dynamic_cast<CallExpr*>(node->initializer.get())) {
+                if (callExpr->name.value == "malloc") {
+                    node->initializer->accept(this);
+                    if (lastValue) {
+                        // Store the malloc result
+                        builder->CreateStore(lastValue, alloca);
+                    }
+                }
+            }
         }
+        // Handle non-array initialization
+        else {
+            node->initializer->accept(this);
+            if (lastValue) {
+                // Convert the initializer value to the variable's type if needed
+                lastValue = convertValue(lastValue, varType);
+                if (lastValue) {
+                    builder->CreateStore(lastValue, alloca);
+                }
+            }
+        }
+    }
+    // No initializer - zero initialize
+    else {
+        if (node->type.isArray && node->type.arraySize >= 0) {
+            // Zero initialize fixed-size array
+            builder->CreateStore(
+                llvm::ConstantAggregateZero::get(varType),
+                alloca
+            );
+        }
+        else if (node->type.isArray) {
+            // Initialize dynamic array pointer to null
+            builder->CreateStore(
+                llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(varType)),
+                alloca
+            );
+        }
+        else {
+            // Zero initialize primitive type
+            builder->CreateStore(
+                llvm::Constant::getNullValue(varType),
+                alloca
+            );
+        }
+    }
 
-        builder->CreateStore(lastValue, alloca);
-    } else {
-        // Initialize with default value
-        llvm::Value* defaultValue;
-        if (node->type.name == "str") {
-            // Initialize string to empty string
-            defaultValue = builder->CreateGlobalStringPtr("");
-        } else if (type->isIntegerTy()) {
-            defaultValue = llvm::ConstantInt::get(type, 0);
-        } else if (type->isDoubleTy()) {
-            defaultValue = llvm::ConstantFP::get(type, 0.0);
-        } else if (type->isPointerTy()) {
-            defaultValue = llvm::ConstantPointerNull::get(llvm::cast<llvm::PointerType>(type));
-        } else {
-            defaultValue = llvm::Constant::getNullValue(type);
-        }
-        builder->CreateStore(defaultValue, alloca);
+    // Update symbol table
+    symbolTable.declare(node->name.value, node->type);
+    if (Symbol* symbol = symbolTable.resolve(node->name.value)) {
+        symbol->llvmValue = alloca;
+        symbol->isAlloca = true;
     }
 }
-
 
 void CodegenVisitor::visit(BlockStmt* node) {
     for (const auto& stmt : node->statements) {

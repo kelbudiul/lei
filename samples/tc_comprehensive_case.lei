@@ -1,0 +1,73 @@
+// Program to demonstrate language features without `for` loop
+
+// Declare a function to calculate factorial recursively
+fn int factorial(n: int) {
+    if (n <= 1) {
+        return 1;
+    }
+    return n * factorial(n - 1);
+}
+
+// Main function
+fn int main(argc: int, argv: str[]) {
+    // Variable declarations
+    var x: int = 10;
+    var y: float = 5.5;
+    var isPositive: bool = true;
+    var message: str = "Hello, World!";
+    
+    // Print initial values
+    print(message);
+    print(x);
+    print(y);
+    print(isPositive);
+
+    // Arithmetic operations
+    var sum: int = x + 5;
+    var difference: float = y - 2.5;
+    var product: int = x * 2;
+    var quotient: float = y / 3.3;
+
+    print(sum);
+    print(difference);
+    print(product);
+    print(quotient);
+
+    // Arrays
+    var nums: int[5] = {1, 2, 3, 4, 5};
+    nums[2] = 10; // Modify an element
+    print(nums[2]);
+
+    // Dynamic array allocation
+    var dynamicArray: int[] = malloc(10 * sizeof(int));
+    var i: int = 0;  // Replace `for` with `while`
+    while i < 10 {
+        dynamicArray[i] = i * 2;
+        print(dynamicArray[i]);
+        i = i + 1;
+    }
+
+    // Free allocated memory
+    free(dynamicArray);
+
+    // Function call
+    var fact: int = factorial(5);
+    print(fact);
+    
+    // Conditional statements
+    if x > 0 {
+        print("x is positive");
+    } else {
+        print("x is not positive");
+    }
+
+    // Loops
+    var counter: int = 0;
+    while counter < 5 {
+        print(counter);
+        counter = counter + 1;
+    }
+
+
+    return 0;
+}

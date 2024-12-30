@@ -6,6 +6,7 @@
 enum TokenType {
     // Keywords
     FN,             ///< Function declaration 'fn'
+    VOID,           ///< Void type "void"
     INT,            ///< Integer type 'int'
     FLOAT_TYPE,     ///< Float type 'float'
     BOOL_TYPE,      ///< Boolean type 'bool'

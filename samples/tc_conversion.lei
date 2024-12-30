@@ -1,0 +1,9 @@
+
+fn int main() {
+    var x: int = atoi(input("Enter N: "));
+    var f: float = atof(input("Enter N float: "));
+    print("N equals");
+    print(x);
+    print("N float equals");
+    print(f);
+}

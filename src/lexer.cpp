@@ -7,6 +7,7 @@
 // Keyword mapping
 const std::unordered_map<std::string, TokenType> keywords = {
     {"fn", FN},
+    {"void", VOID},
     {"int", INT},
     {"float", FLOAT_TYPE},
     {"bool", BOOL_TYPE},

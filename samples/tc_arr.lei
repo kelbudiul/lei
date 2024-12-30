@@ -1,29 +1,24 @@
 fn int main() {
-    var size: int = 5 * 4;
-    var arr1: int[] = malloc(size);  // Dynamic allocation
-    var arr2: int[] = {1, 2, 3};                // Array literal
-    var arr3: int[10] = {};                     // Zero-initialized fixed-size array
-    arr1[0] = 42;  
+    // Fixed-size array with initialization
+    var fixed: int[3] = {1, 2, 3};
     
-    //print(arr1[0]);                             // Array access
-
-    // Uninitialized variables with default values
-    var count: int;            // 0
-    var temperature: float;    // 0.0
-    var nameSur: str = "Elbek Tursunov";
+    // Dynamically allocated array
+    var size: int = 5;
+    var dynamic: int[] = malloc(size * sizeof(int));
     
-    // Fixed size array
-    var fixed: int[3];         // [0,0,0]
-   
-
-    // Resize array to 10 integers
-    arr1 = realloc(arr1, 10 * sizeof(int));
-
-    // Free memory when done
-    free(arr1);
-
+    // Use the dynamic array
+    dynamic[0] = 42;
+    print(dynamic[0]);  // Prints 42
     
-    // Partial array initialization
-    var grades: float[5] = {90.5, 85.0};  // [90.5, 85.0, 0.0, 0.0, 0.0]
+    // Clean up dynamic memory
+    free(dynamic);
+    
+    // Initialize an array with values
+    var initialized: int[4] = {10, 20, 30, 40};
+    
+    // Access array elements using an intermediate variable
+    var value: int = initialized[2];
+    print(value);  // Prints 30
+    
     return 0;
 }

@@ -53,6 +53,7 @@ private:
     void ensureBooleanType(const Type& type, const Token& context);
     void declareBuiltinFunctions(); 
     bool isConditionExpr(Expr* expr);
+    
 };
 
 #endif // SEMANTIC_VISITOR_H

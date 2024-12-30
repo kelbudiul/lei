@@ -50,6 +50,20 @@ bool SemanticAnalyzer::analyze(Program* program) {
 }
 
 void SemanticAnalyzer::declareBuiltinFunctions() {
+
+    // Casting functions
+    // String to integer
+    symbolTable.declareFunction("atoi", Type("int"), { Parameter(Token(IDENTIFIER, "str", 0, 0), Type("str")) });
+
+    // String to float
+    symbolTable.declareFunction("atof", Type("float"), { Parameter(Token(IDENTIFIER, "str", 0, 0), Type("str")) });
+
+    // Integer to string
+    symbolTable.declareFunction("itoa", Type("str"), { Parameter(Token(IDENTIFIER, "num", 0, 0), Type("int")) });
+
+    // Float to string
+    symbolTable.declareFunction("ftoa", Type("str"), { Parameter(Token(IDENTIFIER, "num", 0, 0), Type("float")) });
+
     // Existing built-in functions
     std::vector<Parameter> printParams = {
         Parameter(Token(IDENTIFIER, "value", 0, 0), Type("any"))
@@ -123,6 +137,8 @@ void SemanticAnalyzer::visit(Program* node) {
 
 
 void SemanticAnalyzer::visit(FunctionDecl* node) {
+
+
     // Check if this is the main function
     if (node->name.value == "main") {
         mainFound = validateMainFunction(node);
@@ -236,7 +252,29 @@ void SemanticAnalyzer::visit(VarDeclStmt* node) {
             );
             return;
         }
+
+        if (auto* arrayInit = dynamic_cast<ArrayInitExpr*>(node->initializer.get())) {
+            // Ensure initializer is valid for fixed-size array
+            if (!node->type.isArray || node->type.arraySize < 0) {
+                ErrorHandler::instance().error(
+                    ErrorLevel::SEMANTIC,
+                    node->name.line,
+                    node->name.column,
+                    "Zero initializer '{}' can only be used for fixed-size arrays"
+                );
+                return;
+            }
+        }
+    
+        if (node->type.name == "void") {
+        ErrorHandler::instance().error(
+            ErrorLevel::SEMANTIC,
+            node->name.line,
+            node->name.column,
+            "Variable cannot have 'void' type"
+        );
     }
+
     
     // Declare the variable in the current scope
     if (!symbolTable.declare(node->name.value, node->type)) {
@@ -248,6 +286,7 @@ void SemanticAnalyzer::visit(VarDeclStmt* node) {
         );
         return;
     }
+}
 }
 
 void SemanticAnalyzer::visit(AssignExpr* node) {
@@ -407,16 +446,20 @@ void SemanticAnalyzer::visit(ReturnStmt* node) {
     }
 
     auto returnType = getExprType(node->value.get());
-    if (returnType && !symbolTable.isCompatibleTypes(currentFunctionReturnType, *returnType)) {
-        ErrorHandler::instance().error(
-            ErrorLevel::SEMANTIC,
-            node->value->loc.line,
-            node->value->loc.column,
-            "Return type mismatch. Expected " + currentFunctionReturnType.name + 
-            " but got " + returnType->name
-        );
+    if (returnType) {
+        // Ensure compatibility, including array size
+        if (!symbolTable.isCompatibleTypes(currentFunctionReturnType, *returnType)) {
+            ErrorHandler::instance().error(
+                ErrorLevel::SEMANTIC,
+                node->value->loc.line,
+                node->value->loc.column,
+                "Return type mismatch. Expected " + currentFunctionReturnType.name + 
+                " but got " + returnType->name
+            );
+        }
     }
 }
+
 
 void SemanticAnalyzer::visit(NumberExpr* node) {
     // Nothing to check - type is inherent
@@ -515,7 +558,7 @@ void SemanticAnalyzer::visit(CallExpr* node) {
         );
         return;
     }
-
+    
     // Check argument count
     if (func->parameters.size() != node->arguments.size()) {
         ErrorHandler::instance().error(
@@ -584,4 +627,7 @@ void SemanticAnalyzer::visit(ExprStmt* node) {
 void SemanticAnalyzer::visit(TypeExpr* node) {
     // Nothing to check - type is inherent
 }
+
+
+
 

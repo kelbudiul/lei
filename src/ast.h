@@ -24,6 +24,9 @@ struct Type {
     
     Type(const std::string& n, bool arr = false, int size = -1)
         : name(n), isArray(arr), arraySize(size) {}
+        
+    bool isDynamicArray() const { return isArray && arraySize < 0; }
+    bool isFixedArray() const { return isArray && arraySize >= 0; }
 };
 
 // Base AST node class
@@ -158,9 +161,9 @@ public:
 class ArrayInitExpr : public Expr {
 public:
     std::vector<std::unique_ptr<Expr>> elements;
-    
+    size_t inferredSize;    
     ArrayInitExpr(std::vector<std::unique_ptr<Expr>> elems, const Token& braceToken)
-        : Expr(Location(braceToken)), elements(std::move(elems)) {}
+        : Expr(Location(braceToken)), elements(std::move(elems)), inferredSize(elements.size()) {}
     void accept(Visitor* visitor) override;
 };
 

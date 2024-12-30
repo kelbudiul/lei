@@ -104,6 +104,7 @@ Type Parser::parseType() {
     else if (match(FLOAT_TYPE)) typeName = "float";
     else if (match(BOOL_TYPE)) typeName = "bool";
     else if (match(STRING_TYPE)) typeName = "str";
+    else if (match(VOID)) typeName = "void";
     else {
         ErrorHandler::instance().error(
             ErrorLevel::SYNTAX,
@@ -230,6 +231,16 @@ std::unique_ptr<VarDeclStmt> Parser::parseVarDecl() {
     consume(COLON, "Expected ':' after variable name");
     
     Type type = parseType();
+    
+    if (type.name == "void") {
+    ErrorHandler::instance().error(
+        ErrorLevel::SYNTAX,
+        name.line,
+        name.column,
+        "Variables cannot have 'void' type"
+    );
+    return nullptr;
+}
     std::unique_ptr<Expr> initializer = nullptr;
     
     if (match(EQUALS)) {
