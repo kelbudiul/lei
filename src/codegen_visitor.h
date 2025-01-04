@@ -5,6 +5,7 @@
 #include "ast.h"
 #include "symbol_table.h"
 #include "error_handler.h"
+#include "type_helper.h"
 #include <llvm/IR/LLVMContext.h>
 #include <llvm/IR/IRBuilder.h>
 #include <llvm/IR/Module.h>
@@ -18,6 +19,8 @@
 #include <string>
 #include <unordered_map>
 #include <iostream>
+#include <unordered_set>
+
 
 class CodegenVisitor : public Visitor {
 public:
@@ -26,6 +29,7 @@ public:
 
     // Main entry point for code generation
     std::unique_ptr<llvm::Module> generateModule(Program* program, const std::string& moduleName);
+    
 
     // AST Visitor interface implementation
     void visit(Program* node) override;
@@ -56,25 +60,29 @@ private:
     llvm::Function* currentFunction;
     llvm::Value* lastValue;
     std::unordered_map<std::string, llvm::Value*> stringConstants;
-     SymbolTable& symbolTable = SymbolTable::instance(); // Reference to singleton symbol table
+    SymbolTable& symbolTable = SymbolTable::instance(); // Reference to singleton symbol table
     ErrorHandler& errorHandler = ErrorHandler::instance();  // Reference to singleton error handler
+    TypeHelper& typeHelper;
     bool isAssignmentTarget = false;
 
     // Helper methods for type conversion and code generation
     ASTNode* getCurrentParent(ASTNode* node);
-    llvm::Type* getLLVMType(const Type& type);
     llvm::Value* generateAlloca(llvm::Function* function, const std::string& name, llvm::Type* type);
-    void createBasicBlocksForLoop(llvm::Function* function, const std::string& loopName,
-                                llvm::BasicBlock*& condBlock,
-                                llvm::BasicBlock*& bodyBlock,
-                                llvm::BasicBlock*& endBlock);
     void declareRuntimeFunctions();
-    llvm::Function* getIntrinsicFunction(const std::string& name);
-    llvm::Value* handleArrayArgument(llvm::Value* arrayValue);
-    void reportError(const std::string& message, const Location& loc);
-    llvm::Value* convertValue(llvm::Value* value, llvm::Type* targetType);
-    void handleFixedSizeArrayDecl(VarDeclStmt* node, llvm::Type* arrayType);
-    void handleDynamicArrayDecl(VarDeclStmt* node, llvm::Type* pointerType);
+    void declareFunction(const std::string& name, llvm::Type* returnType, 
+                                     const std::vector<llvm::Type*>& paramTypes, bool isVarArgs = false);
+                                      llvm::Value* handleBuiltinFunction(CallExpr* node);
+    llvm::Value* handleRegularFunctionCall(CallExpr* node);
+    std::vector<llvm::Value*> processCallArguments(CallExpr* node, FunctionSymbol* funcSymbol);
+
+    llvm::Value* createVariableAllocation(VarDeclStmt* node);
+    void handleVariableInitialization(VarDeclStmt* node, llvm::Value* alloca);
+    void handleArrayInitialization(VarDeclStmt* node, llvm::Value* alloca, ArrayInitExpr* arrayInit);
+    llvm::Value* handleArrayArgument(llvm::Value* arg);
+    void initializeFixedArray(VarDeclStmt* node, llvm::Value* alloca, ArrayInitExpr* arrayInit);
+    void initializeDynamicArray(VarDeclStmt* node, llvm::Value* alloca);
+    void updateSymbolTableEntry(const std::string& name, const Type& type, llvm::Value* alloca);
+
     // Built-in function generators
     void generatePrintCall(CallExpr* node);
     void generateInputCall(CallExpr* node);
@@ -83,6 +91,8 @@ private:
     void generateReallocCall(CallExpr* node);
     void generateStrlenCall(CallExpr* node);
     llvm::Value* generateSizeofCall(CallExpr* node);
+
+    void reportError(const std::string& message, const Location& loc);
 };
 
 #endif // CODEGEN_VISITOR_H

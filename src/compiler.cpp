@@ -8,7 +8,7 @@
 #include <llvm/Support/raw_ostream.h>
 #include <llvm/Support/FileSystem.h>
 
-bool Compiler::compile(const std::string& source, const std::string& outputPath) {
+bool Compiler::compile(const std::string& source, const std::string& outputPath,  bool printAST, bool printSymbolTable, bool printIR) {
     // Lexical Analysis
     Lexer lexer(source);
     auto tokens = lexer.tokenize();
@@ -23,11 +23,15 @@ bool Compiler::compile(const std::string& source, const std::string& outputPath)
         return false;
     }
 
-
     // Semantic Analysis
     SemanticAnalyzer analyzer(symbolTable);
     if (!analyzer.analyze(ast.get())) {
         return false;
+    }
+
+    if (printAST) {
+        ASTPrinter printer;
+        std::cout << "AST Structure:\n" << printer.print(ast.get()) << std::endl;
     }
 
     // Code Generation
@@ -35,6 +39,14 @@ bool Compiler::compile(const std::string& source, const std::string& outputPath)
     auto module = codegen.generateModule(ast.get(), "module");
     if (!module || errorHandler.hasErrors()) {
         return false;
+    }
+
+    if (printSymbolTable) {
+        symbolTable.print();
+    }
+
+    if(printIR) {
+    module->print(llvm::outs(), nullptr);
     }
 
     // Write output
@@ -49,11 +61,10 @@ bool Compiler::compile(const std::string& source, const std::string& outputPath)
         return false;
     }
 
-    module->print(dest, nullptr);
     return true;
 }
 
-bool Compiler::execute(const std::string& source) {
+bool Compiler::execute(const std::string& source,  bool printAST, bool printSymbolTable, bool printIR) {
     // Lexical Analysis
     Lexer lexer(source);
     auto tokens = lexer.tokenize();
@@ -68,19 +79,18 @@ bool Compiler::execute(const std::string& source) {
         return false;
     }
 
-
-
     // Semantic Analysis
     SemanticAnalyzer analyzer(symbolTable);
     if (!analyzer.analyze(ast.get())) {
         return false;
     }
 
+    if (printAST) {
+        ASTPrinter printer;
+        std::cout << "AST Structure:\n" << printer.print(ast.get()) << std::endl;
+    }
 
-    symbolTable.print();
-
-    ASTPrinter printer;
-    std::cout << "AST Structure:\n" << printer.print(ast.get()) << std::endl;
+    
 
     // Code Generation
     CodegenVisitor codegen(llvmContext);
@@ -89,15 +99,17 @@ bool Compiler::execute(const std::string& source) {
         return false;
     }
 
-    symbolTable.print();
-    std::cout << "Debug: Functions in module:" << std::endl;
-    for (auto& function : module->getFunctionList()) {
-        std::cout << function.getName().str() << std::endl;
+    if (printSymbolTable) {
+        symbolTable.print();
     }
-    // Print module state before execution
-    std::cout << "Debug: Module IR before execution:\n";
-    module->print(llvm::outs(), nullptr);
+
     
+    // Print module state before execution
+    if(printIR) {
+    module->print(llvm::outs(), nullptr);
+    }
+
+
     // Initialize JIT ExecutionEngine
     std::string errorStr;
     llvm::EngineBuilder engineBuilder(std::move(module));
@@ -112,17 +124,13 @@ bool Compiler::execute(const std::string& source) {
         return false;
     }
 
-    std::cout << "Debug: Looking for main function\n";
     auto mainFunction = engine->FindFunctionNamed("main");
     
     if (!mainFunction) {
-        std::cout << "Debug: Function lookup failed\n";
         errorHandler.error(ErrorLevel::CODEGEN, 0, 0, "Failed to find main function in module");
         return false;
     }
 
-    std::cout << "Debug: Found main function at address: " 
-              << mainFunction << "\n";
 
     // Execute the function
     std::vector<llvm::GenericValue> args;

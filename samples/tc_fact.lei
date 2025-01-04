@@ -1,0 +1,25 @@
+fn int factorial(n: int) {
+    if n == 1 {
+        return 1;
+    }
+
+    var result: int = 1;
+
+
+    while n > 1 {
+        result = result * n;
+        n = n - 1;
+    }
+    return result;
+}
+
+
+fn int main() {
+    var n: int = atoi(input("Enter N: "));
+    var result: int = factorial(n);
+    print("\nResult for entered number is: ");
+    print(result);
+    print("\n");
+    
+    return 0;
+}

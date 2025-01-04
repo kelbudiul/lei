@@ -19,8 +19,8 @@ public:
     ErrorHandler& errorHandler = ErrorHandler::instance();
     SymbolTable& symbolTable = SymbolTable::instance();  // Use singleton instance instead of direct member
 
-    bool compile(const std::string& source, const std::string& outputPath);
-    bool execute(const std::string& source);
+    bool compile(const std::string& source, const std::string& outputPath, bool printAST, bool printSymbolTable, bool printIR);
+    bool execute(const std::string& source,  bool printAST, bool printSymbolTable, bool printIR);
 };
 
 #endif // COMPILER_H

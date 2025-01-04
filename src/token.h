@@ -27,7 +27,6 @@ enum TokenType {
     // Operators
     PLUS,           ///< Addition '+'
     MINUS,          ///< Subtraction '-'
-    STAR,           ///< Multiplication '*'
     SLASH,          ///< Division '/'
     PLUS_EQUALS,    ///< Add and assign '+='
     MINUS_EQUALS,   ///< Subtract and assign '-='
@@ -43,6 +42,8 @@ enum TokenType {
     AND,            ///< Logical AND '&&'
     OR,             ///< Logical OR '||'
     NOT,            ///< Logical NOT '!'
+    STAR,           // * for both multiplication and dereferencing
+    AMPERSAND,      // & for address-of
     
     // Delimiters
     LPAREN,         ///< Left parenthesis '('

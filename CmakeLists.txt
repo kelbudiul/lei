@@ -40,6 +40,7 @@ set(LIB_SOURCES
     src/symbol_table.cpp
     src/codegen_visitor.cpp
     src/compiler.cpp
+    src/type_helper.cpp
 )
 
 # Create a library target for the compiler components

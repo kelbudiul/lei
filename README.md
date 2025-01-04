@@ -1,94 +1,232 @@
-# Lei Programming Language Compiler
+# Lei Programming Language
 
-A compiler implementation for the Lei programming language, built using C++ and LLVM. This project implements a complete compilation pipeline including lexical analysis, parsing, semantic analysis, and code generation.
+A statically-typed programming language compiler that generates LLVM IR.
 
-## Project Structure
+## Features
+- Static typing with support for `int`, `float`, `bool`, `str`, and `void` types
+- Fixed-size and dynamic arrays
+- Functions with proper scoping
+- Memory management (malloc/realloc/free)
+- Control flow statements (if/else, while)
+- Standard I/O operations
+- Compound assignment operators
 
-The compiler is organized into several key components:
-
-### Core Components
-
-- **Lexer** (`lexer.h`, `lexer.cpp`): Performs lexical analysis, converting source code into tokens. Handles basic language tokens including keywords (`fn`, `int`, `return`), identifiers, numbers, and symbols.
-
-- **Parser** (`parser.h`, `parser.cpp`): Constructs an Abstract Syntax Tree (AST) from the token stream. Currently supports parsing of:
-  - Function definitions
-  - Return statements
-  - Basic expressions
-
-- **AST** (`ast.h`, `ast.cpp`): Defines the Abstract Syntax Tree structure using a visitor pattern. Includes nodes for:
-  - Functions
-  - Return statements
-  - Declarations
-  - Assignments
-  - Arrays
-
-- **Symbol Table** (`symbol_table.h`, `symbol_table.cpp`): Manages symbol information and scope, providing:
-  - Symbol tracking
-  - Type information storage
-  - Duplicate declaration checking
-  - Symbol lookup
-
-### Analysis and Generation
-
-- **Semantic Visitor** (`semantic_visitor.h`, `semantic_visitor.cpp`): Performs semantic analysis including:
-  - Type checking
-  - Symbol resolution
-  - Error detection and reporting
-
-- **Code Generator** (`codegen_visitor.h`, `codegen_visitor.cpp`): Generates LLVM IR and handles JIT compilation:
-  - LLVM IR generation
-  - Runtime execution support
-  - Function compilation and execution
-
-### Utility Components
-
-- **Source Reader** (`source_reader.h`, `source_reader.cpp`): Handles source file operations:
-  - File reading
-  - Content streaming
-  - Error handling for file operations
-
-## Building and Running
+## Development Environment Setup
 
 ### Prerequisites
+- C++ compiler supporting C++17 or later
+- LLVM development libraries (version 15.0 or later)
+- CMake (version 3.13 or later)
+- Git for version control
 
-- C++ compiler with C++17 support
-- LLVM development libraries
-- CMake (build system)
+### Installation
 
-### Usage
-
+#### Ubuntu/Debian
 ```bash
-./compiler <input_file> [output_path]
+# Install build essentials and LLVM
+sudo apt-get update
+sudo apt-get install build-essential
+sudo apt-get install llvm-dev
+sudo apt-get install cmake
+sudo apt-get install git
+
+# Clone the repository
+git clone https://github.com/yourusername/lei.git
+cd lei
+
+# Create build directory
+mkdir build
+cd build
+
+# Configure and build
+cmake ..
+make
+
+# Run tests
+make test
 ```
 
-The compiler accepts two command-line arguments:
-- `input_file`: Path to the source file (required)
-- `output_path`: Output directory for generated files (optional, defaults to current directory)
+#### macOS
+```bash
+# Install prerequisites using Homebrew
+brew install llvm
+brew install cmake
 
-## Implementation Details
+# Clone and build (same steps as above)
+```
 
-### Visitor Pattern
+#### Windows
+1. Install Visual Studio with C++ support
+2. Install LLVM from https://releases.llvm.org/
+3. Install CMake from https://cmake.org/download/
+4. Follow the build steps above using Visual Studio Developer Command Prompt
 
-The project extensively uses the visitor pattern for AST traversal and processing. Three main visitors are implemented:
+## Usage
 
-1. Base Visitor (visitor.h)
-2. Semantic Analysis Visitor
-3. Code Generation Visitor
+### Command Line Options
+```bash
+leic [input] [-o output] [-e] [--print-ast] [--print-sp] [--print-ir]
 
-### Error Handling
+Options:
+    input           Input source file
+    -o, --output    Output path for generated LLVM IR
+    -e, --execute   Directly execute the generated LLVM IR
+    --print-ast     Print the abstract syntax tree
+    --print-sp      Print the symbol table
+    --print-ir      Print the LLVM IR
+```
 
-The compiler implements comprehensive error handling:
-- Lexical errors (unknown characters, malformed tokens)
-- Parsing errors (unexpected tokens, syntax errors)
-- Semantic errors (duplicate declarations, type mismatches)
-- File handling errors
+### Example
+```bash
+# Compile a source file to LLVM IR
+leic example.lei -o example.ll
 
-### Memory Management
+# Compile and execute
+leic example.lei -e
 
-The project uses modern C++ memory management practices:
-- `std::unique_ptr` for AST node ownership
-- RAII principles throughout
-- Smart pointer usage for LLVM resources
+# Compile with debug output
+leic example.lei --print-ast --print-ir
+```
+
+## Language Syntax Examples
+
+### Basic Program Structure
+```rust
+// Function declaration with return type
+fn int main() {
+    var x: int = 42;        // Variable declaration with type annotation
+    print(x);               // Built-in print function
+    return 0;
+}
+```
+
+### Variable Declarations and Types
+```rust
+fn void examples() {
+    // Basic types
+    var count: int = 0;            // Integer
+    var temp: float = 98.6;        // Floating point
+    var name: str = "Alice";       // String
+    var isActive: bool = true;     // Boolean
+
+    // Arrays
+    var fixed: int[3] = {1, 2, 3}; // Fixed-size array
+    var size: int = 5;
+    var dynamic: int[] = malloc(size * sizeof(int)); // Dynamic array
+
+    // Don't forget to free dynamic memory
+    free(dynamic);
+}
+```
+
+### Control Flow
+```rust
+fn int checkValue(x: int) {
+    // If-else statement
+    if x > 10 {
+        print("Greater than 10");
+    } else if x < 0 {
+        print("Negative number");
+    } else {
+        print("Between 0 and 10");
+    }
+
+    // While loop
+    var i: int = 0;
+    while i < x {
+        print(i);
+        i = i + 1;
+    }
+
+    return x;
+}
+```
+
+### Array Operations
+```rust
+// Function to sum array elements
+fn int sum(arr: int[], size: int) {
+    var total: int = 0;
+    var i: int = 0;
+    
+    while i < size {
+        total = total + arr[i];
+        i = i + 1;
+    }
+    
+    return total;
+}
+
+fn void arrayExample() {
+    // Fixed array initialization
+    var nums: int[5] = {1, 2, 3, 4, 5};
+    
+    // Dynamic array
+    var dynamic: int[] = malloc(3 * sizeof(int));
+    dynamic[0] = 10;
+    dynamic[1] = 20;
+    dynamic[2] = 30;
+    
+    // Resize dynamic array
+    dynamic = realloc(dynamic, 4 * sizeof(int));
+    dynamic[3] = 40;
+    
+    // Don't forget to free
+    free(dynamic);
+}
+```
+
+### String Operations
+```rust
+fn void stringExample() {
+    var name: str = "John";
+    var greeting: str = "Hello, ";
+    
+    // String input
+    var input: str = input("Enter your name: ");
+    
+    // Print with string concatenation
+    print(greeting + input);
+}
+```
+
+### Compound Assignment Operators
+```rust
+fn void operatorExample() {
+    var x: int = 5;
+    x += 3;      // x = x + 3
+    x -= 2;      // x = x - 2
+    x *= 4;      // x = x * 4
+    x /= 2;      // x = x / 2
+}
+```
+
+### Memory Management Example
+```rust
+fn int[] createAndFillArray(size: int, value: int) {
+    // Allocate memory
+    var arr: int[] = malloc(size * sizeof(int));
+    
+    // Fill array
+    var i: int = 0;
+    while i < size {
+        arr[i] = value;
+        i = i + 1;
+    }
+    
+    return arr;  // Caller is responsible for freeing memory
+}
+
+fn void memoryExample() {
+    var arr: int[] = createAndFillArray(5, 42);
+    
+    // Use array
+    print(arr[0]);
+    
+    // Clean up
+    free(arr);
+}
+```
 
 ## Current Limitations
 
@@ -217,30 +355,3 @@ fn int main() {
     return 0;
 }
 ```
-
-### Notable Additions and Rules
-
-1. **Default Initialization**
-   - All basic types have default values when uninitialized
-   - Array elements are initialized to their type's default value
-
-2. **Dynamic Arrays**
-   - Can be declared without size using `type[]`
-   - Size determined at runtime using `new type[size]`
-   - Support reallocation with new size
-
-3. **Array Initialization**
-   - Can be fully initialized, partially initialized, or empty
-   - Missing elements get default values
-   - Fixed-size arrays maintain their size constraint
-   - Dynamic arrays can be resized
-
-4. **Memory Management**
-   - Dynamic arrays are automatically managed
-   - Memory is freed when arrays go out of scope
-   - No explicit delete/free operations needed
-
-5. **Constraints**
-   - Cannot access array elements before allocation
-   - Array indices must be within bounds
-   - Dynamic arrays must be allocated before use

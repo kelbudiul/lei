@@ -1,0 +1,213 @@
+// Binary Search implementation
+// Takes a sorted array and returns the index of the target value, or -1 if not found
+fn int binarySearch(arr: int[], size: int, target: int) {
+    var left: int = 0;
+    var right: int = size - 1;
+    
+    while left <= right {
+        var mid: int = left + (right - left) / 2;
+        
+        // Check if target is present at middle
+        if arr[mid] == target {
+            return mid;
+        }
+        
+        // If target greater, ignore left half
+        if arr[mid] < target {
+            left = mid + 1;
+        } 
+        // If target smaller, ignore right half
+        else {
+            right = mid - 1;
+        }
+    }
+    
+    // Target not found
+    return -1;
+}
+
+// Array reversal in place
+// Demonstrates array manipulation with two pointers approach
+fn void reverseArray(arr: int[], size: int) {
+    var start: int = 0;
+    var end: int = size - 1;
+    
+    while start < end {
+        // Swap elements at start and end
+        var temp: int = arr[start];
+        arr[start] = arr[end];
+        arr[end] = temp;
+        
+        start = start + 1;
+        end = end - 1;
+    }
+}
+
+fn void merge(arr: int[], left: int, mid: int, right: int) {
+    // Calculate sizes of two subarrays to merge
+    var n1: int = mid - left + 1;
+    var n2: int = right - mid;
+    
+    // Create temporary arrays
+    var leftArr: int[] = malloc(n1 * sizeof(int));
+    var rightArr: int[] = malloc(n2 * sizeof(int));
+    
+    // Copy data to temporary arrays
+    var i: int = 0;
+    while i < n1 {
+        leftArr[i] = arr[left + i];
+        i = i + 1;
+    }
+    
+    i = 0;
+    while i < n2 {
+        rightArr[i] = arr[mid + 1 + i];
+        i = i + 1;
+    }
+    
+    // Merge the temporary arrays back
+    i = 0;
+    var j: int = 0;
+    var k: int = left;
+    
+    while i < n1 && j < n2 {
+        if leftArr[i] <= rightArr[j] {
+            arr[k] = leftArr[i];
+            i = i + 1;
+        } else {
+            arr[k] = rightArr[j];
+            j = j + 1;
+        }
+        k = k + 1;
+    }
+    
+    // Copy remaining elements of leftArr if any
+    while i < n1 {
+        arr[k] = leftArr[i];
+        i = i + 1;
+        k = k + 1;
+    }
+    
+    // Copy remaining elements of rightArr if any
+    while j < n2 {
+        arr[k] = rightArr[j];
+        j = j + 1;
+        k = k + 1;
+    }
+    
+    // Free temporary arrays
+    free(leftArr);
+    free(rightArr);
+}
+
+fn void mergeSort(arr: int[], left: int, right: int) {
+    if left < right {
+        // Calculate middle point
+        var mid: int = left + (right - left) / 2;
+        
+        // Sort first and second halves
+        mergeSort(arr, left, mid);
+        mergeSort(arr, mid + 1, right);
+        
+        // Merge the sorted halves
+        merge(arr, left, mid, right);
+    }
+}
+
+
+// Helper function to print an array
+fn void printArray(arr: int[], size: int) {
+    var i: int = 0;
+    print("Array contents: ");
+    while i < size {
+        print(arr[i]);
+        print(" ");
+        i = i + 1;
+    }
+    print("\n");
+}
+
+// Find the maximum value in an array
+// Demonstrates linear search and comparison operations
+fn int findMax(arr: int[], size: int) {
+    if size < 1 {
+        return 0;  // Return 0 for empty array
+    }
+    
+    var max: int = arr[0];
+    var i: int = 1;
+    
+    while i < size {
+        if arr[i] > max {
+            max = arr[i];
+        }
+        i = i + 1;
+    }
+    
+    return max;
+}
+
+
+
+// Linear Congruential Generator without global state
+fn int rand(seed: int, a: int, c: int, m: int) {
+    var nextSeed: int = seed * a + c;
+
+    // Manual modulo operation (nextSeed % m)
+    while nextSeed >= m {
+        nextSeed = nextSeed - m;
+    }
+
+    return nextSeed;
+}
+
+fn void randInitArr(arr: int[], size: int, seed: int) {
+    // Constants for the LCG
+    var a: int = 5;
+    var c: int = 3;
+    var m: int = 64;
+
+    var i: int = 0;
+    var currentSeed: int = seed;
+
+    while i < size {
+        // Generate the next random number
+        currentSeed = rand(currentSeed, a, c, m);
+
+        // Assign the random number to the array element (limit to 0-99 manually)
+        arr[i] = currentSeed;
+        while arr[i] >= 100 {
+            arr[i] = arr[i] - 100;
+        }
+
+        i = i + 1;
+    }
+}
+
+
+fn int main() {
+    // Test 1: Binary Search
+    print("Testing Binary Search:\n");
+    var size: int = atoi(input("Please enter size for array: "));
+    var sortedArr: int[] = malloc(size * sizeof(int));
+    var seed: int = 12345;
+    print("Randomly initialized array:\n");
+    randInitArr(sortedArr, size, seed);
+    printArray(sortedArr, size);
+    
+    print("Sorted array for binary search:\n");
+    mergeSort(sortedArr, 0, size-1);
+    printArray(sortedArr, size);
+    
+    
+    var target: int = atoi(input("So what number we are searching for?: "));
+    var result: int = binarySearch(sortedArr, size, target);
+    print("Found at index: \n");
+    print(result);
+    print("\n");
+    
+
+    free(sortedArr);
+    
+    return 0;
+}

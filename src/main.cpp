@@ -27,6 +27,15 @@ int main(int argc, char* argv[]) {
     bool execute = false;
     app.add_flag("-e,--execute", execute, "Directly execute the generated LLVM IR");
 
+    bool printAST = false;
+    app.add_flag("--print-ast", printAST, "Print the abstract syntax tree (AST)");
+
+    bool printSymbolTable = false; 
+    app.add_flag("--print-sp", printSymbolTable, "Print the symbol table");
+
+    bool printIR = false;
+    app.add_flag("--print-ir", printIR, "Print the LLVM IR");
+
     CLI11_PARSE(app, argc, argv);
     
     
@@ -42,14 +51,14 @@ int main(int argc, char* argv[]) {
         Compiler compiler;
         
         if (execute) {
-            if (!compiler.execute(sourceCode)) {
+            if (!compiler.execute(sourceCode, printAST, printSymbolTable, printIR)) {
                 if (compiler.errorHandler.hasErrors(ErrorLevel::CODEGEN)) {
                     printErrorsWithContext(compiler.errorHandler.getErrors(ErrorLevel::CODEGEN), sourceCode);
                 }
                 return EXIT_FAILURE;
             }
         } else {
-            if (!compiler.compile(sourceCode, outputPath)) {
+            if (!compiler.compile(sourceCode, outputPath, printAST, printSymbolTable, printIR)) {
                 if (compiler.errorHandler.hasErrors(ErrorLevel::LEXICAL)) {
                     std::cerr << "\nLexical Analysis Failed\n";
                     printErrorsWithContext(compiler.errorHandler.getErrors(ErrorLevel::LEXICAL), sourceCode);

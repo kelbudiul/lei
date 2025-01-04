@@ -38,14 +38,15 @@ fn bool isDivisible(dividend: int, divisor: int) {
 
 // Test the isPrime function
 fn int main() {
-    var num: int = atoi(input("Check N for prime, please enter it:")); // Test with any number
+    var num: int = atoi(input("Check N for prime, please enter it: ")); // Test with any number
     var cond: bool = isPrime(num);
+    print("\n");
     if (cond) {
         print(num);
-        print(" is prime");
+        print(" is prime\n");
     } else {
         print(num);
-        print(" is not prime");
+        print(" is not prime\n");
     }
 
 

@@ -1,6 +1,0 @@
-fn int main() {
-    var n: str = input("Enter a number: ");
-    print("N equals:");
-    print(n);
-    return 0;
-}
