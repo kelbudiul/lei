@@ -230,8 +230,7 @@ fn void memoryExample() {
 
 ## Current Limitations
 
-- Basic type system (currently supports integers)
-- Limited function support (no parameters yet)
+- Basic type system
 - Single-file compilation only
 - Basic error recovery
 
@@ -245,7 +244,7 @@ Planned features include:
 - Basic OOP support
 
 
-## Lei Language Grammar
+## Language Grammar
 
 ### Program Structure
 ```ebnf
